@@ -184,6 +184,11 @@ contract PpContract is ERC20 {
         _;
     }
     
+    modifier checkSessionActive(address _nftAddress) {
+        require(AllPricingSessions[_nftAddress].active = true);
+        _;
+    }
+    
     //Create a new pricing session
     function createPricingSession(address _nftAddress) stopOverwrite(_nftAddress) public {
         //Create new instance of PricingSession
@@ -257,17 +262,21 @@ contract PpContract is ERC20 {
     function setFinalAppraisal(address _nftAddress) votesWeightedComplete(_nftAddress) public {
         //requires that the finalAppraisal has not been set yet
         require(AllPricingSessions[_nftAddress].finalAppraisalSet == false);
-        //If a session is larger than 40 people, the user that trigers the final Appraisal is awarded 2 tokens.
-        if(addressesPerNft[_nftAddress].length >= 40) {
-            _mint(msg.sender, 2);
+        //If a session is larger than 25 people, the user that triggers the final Appraisal is awarded 2 * fourth-rt(session size) tokens.
+        uint amount;
+        if (addressesPerNft[_nftAddress].length < 25) {
+            amount = 0;
         }
+        else {
+            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress].length));
+        }
+        _mint(payable(msg.sender), amount);
         //Set amountOfVoters for tracking unique voters in a pricing session
         AllPricingSessions[_nftAddress].uniqueVoters = addressesPerNft[_nftAddress].length;
         //Set finalAppraisal by calculating totalAppraisalValue / totalVotes. Scale back the 1000 to make up for scaling method in setVote
         AllPricingSessions[_nftAddress].finalAppraisal = (totalAppraisalValue[_nftAddress])/(AllPricingSessions[_nftAddress].totalVotes);
         nftAddresses.push(_nftAddress);
         //End pricingSession
-        AllPricingSessions[_nftAddress].active = false;
         AllPricingSessions[_nftAddress].finalAppraisalSet = true;
         emit finalAppraisalDetermined(_nftAddress, AllPricingSessions[_nftAddress].finalAppraisal, AllPricingSessions[_nftAddress].uniqueVoters);
     }
@@ -427,7 +436,22 @@ contract PpContract is ERC20 {
         else {
             AllPricingSessions[_nftAddress].lossHarvested = false;
         }
-    }    
+    } 
+    
+    function endSession(address _nftAddress) checkSessionActive(_nftAddress) public {
+        require(block.timestamp > AllPricingSessions[_nftAddress].endTime + 6 days);
+        uint amount;
+        if (addressesPerNft[_nftAddress].length < 25) {
+            amount = 0;
+        }
+        else {
+            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress].length));
+        }
+        _mint(payable(msg.sender), amount);
+        totalCoinsIssued += amount;
+        AllPricingSessions[_nftAddress].tokensIssued += amount;
+        AllPricingSessions[_nftAddress].active = false;
+    }
     
     /*
     Loss pool should be divided by the amount of tokens in circulation and
