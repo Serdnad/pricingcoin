@@ -1,14 +1,22 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import Button from "$lib/components/common/Button.svelte"
     import NavBar from "$lib/components/common/NavBar.svelte"
     import SessionsTable from "$lib/components/SessionsTable.svelte"
     import TextInput from "$lib/components/common/TextInput.svelte"
-    import Session from "$lib/models/session"
     import CurrencyIcon from "$lib/components/common/CurrencyIcon.svelte"
+    import PpContract from "$lib/contract/pp_contract";
+    import type Session from "$lib/models/session"
 
-    // TODO (Alan): Load sessions from wherever
-    let tmp = new Session("0x28990a298acd67cfe133ef37758930ce92adbf64", Date.now() + 5000 + "", 1000, "Voting", "200.5")
-    let sessions = [tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp]
+    let sessions: Session[] = []
+
+    onMount(async () => {
+        // TODO: Delete me
+        let exampleValue = await PpContract.retrieve()
+        console.log(exampleValue)
+
+        sessions = await PpContract.getSessions()
+    })
 </script>
 
 <NavBar />

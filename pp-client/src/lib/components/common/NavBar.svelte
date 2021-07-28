@@ -1,6 +1,8 @@
 <script lang="ts">
+    import PpContract from "$lib/contract/pp_contract";
+
     function connect() {
-        // TODO (Alan)
+        PpContract.connect()
     }
 </script>
 
@@ -40,6 +42,8 @@
     }
 
     button {
+        cursor: pointer;
+
         height: fit-content;
         background: #1a54ff;
         border: none;
