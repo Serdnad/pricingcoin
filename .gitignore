@@ -30,3 +30,7 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# client app
+pp-client/node_modules
+pp-client/.svelte-kit
