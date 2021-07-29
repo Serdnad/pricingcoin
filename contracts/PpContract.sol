@@ -6,6 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./harvestLossLibrary.sol";
 import "./calculateBaseLibrary.sol";
 import "./sqrtLibrary.sol";
+import "./issueCoinCompLibrary.sol";
+import "./weightVoteLibrary.sol";
 
 contract PpContract is ERC20 {
     
@@ -24,11 +26,13 @@ contract PpContract is ERC20 {
     uint profitGenerated;
     //tracks total amount of coins generated during life of protocol
     uint totalCoinsIssued;
+    //
+    uint nftsPriced;
     //tracks the current nonce (i.e. number lossPoolDistribution session)
     uint nonce;
     
     //Total amount of NFTs that have been priced using pricing protocol
-    address[] nftAddresses;
+    NftInformation[] public listOfNfts;
     //Keep track of all unique coin holder addresses 
     address[] coinHolders; 
     
@@ -36,21 +40,21 @@ contract PpContract is ERC20 {
     //Mapping to check if a user is already considered a coin holder
     mapping(address => bool) isCoinHolder;
     //Maps the total appraisal value to an NFT address to be used for mapping finalAppraisal to specific NFT address
-    mapping(address => uint) totalAppraisalValue;
+    mapping(address => mapping(uint => uint)) totalAppraisalValue;
     //Mapping used to track how many voters have voted on a particular NFT
-    mapping(address => address[]) addressesPerNft;
+    mapping(address => mapping(uint => address[])) addressesPerNft;
     //Easily accesible pricing session lookup 
-    mapping(address => PricingSession) AllPricingSessions;
+    mapping(address => mapping(uint => PricingSession)) AllPricingSessions;
     //Allows pricing protocol to handle multiple NFTs at once by allowing lookup and tracking of different NFTs
-    mapping(address => mapping (address => Voter)) nftVotes;
+    mapping(address => mapping(uint => mapping (address => Voter))) nftVotes;
     //Allow contract to track which NFT sessions a user has participated in
-    mapping(address => address[]) userSessionsParticipated;
-    //Track specific lPDS (at current nonce) holdings
-    mapping(uint => uint) lossPoolDistributionSession;
+    mapping(address => NftInformation[]) userSessionsParticipated;
     //Used to limit user lossPool claims to 1 per rounds
     mapping(uint => mapping(address => bool)) lossPoolAccessCheck;
     //Used to track start time of distribution session 
     mapping(uint => uint) lPDSstartTime;
+    //
+    mapping(uint => DistributeSession) lossPoolDistributionSession;
     
     // ============ Structs ============
     //Voter struct to allow users to submit votes, stake, and track that the user has already voted (i.e. exists = true) 
@@ -105,16 +109,27 @@ contract PpContract is ERC20 {
         bool coinsIssued;
         bool lossHarvested;
     }
+
+    struct DistributeSession {
+        uint poolSize; 
+        uint PpToClaim;
+        bool active;
+    }
+
+    struct NftInformation {
+        address nftAddress;
+        uint tokenid;
+    }
     
     // ============ Events ============
     //Emit sessino creation event
-    event sessionCreated(uint startTime, uint endTime, address _nftAddress);
+    event sessionCreated(uint startTime, uint endTime, address _nftAddress, uint tokenid);
     //Represents a new vote being created
-    event newVoteCreated(address _nftAddress, address _voterAddress, uint appraisal, uint stake);
+    event newVoteCreated(address _nftAddress, uint tokenid, address _voterAddress, uint appraisal, uint stake);
     //Event to show that a session ended.
-    event sessionOver(address _nftAddress, uint endTime);
+    event sessionOver(address _nftAddress, uint tokenid, uint endTime);
     //Represents the ending of pricing session and a final appraisal being determined 
-    event finalAppraisalDetermined(address _nftAddress, uint appraisal, uint amountVoters);
+    event finalAppraisalDetermined(address _nftAddress, uint tokenid, uint appraisal, uint amountVoters);
     //Log coins being issued to user
     event coinsIssued(uint _amount, address recipient);
     //Log stakes successfully being refunded
@@ -124,22 +139,22 @@ contract PpContract is ERC20 {
     
     // ============ Modifiers ============
     //Check if contract is still currently active 
-    modifier isActive(address _nftAddress) {
+    modifier isActive(address _nftAddress, uint tokenid) {
         //If block.timestamp is less than endTime the session is over so user shouldn't be able to vote anymore
-        require(block.timestamp < AllPricingSessions[_nftAddress].endTime, "PNA");
+        require(block.timestamp < AllPricingSessions[_nftAddress][tokenid].endTime, "PNA");
         _;
     }
     
     //Enforce session buffer to stop sessions from getting overwritten
-    modifier stopOverwrite(address _nftAddress) {
-        require(AllPricingSessions[_nftAddress].active = false 
-            && block.timestamp > AllPricingSessions[_nftAddress].endTime + 10 days, "W8D");
+    modifier stopOverwrite(address _nftAddress, uint tokenid) {
+        require(AllPricingSessions[_nftAddress][tokenid].active = false 
+            && block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 10 days, "W8D");
         _;
     }
     
     //Make sure users don't submit more than one appraisal
-    modifier oneVoteEach(address _nftAddress) {
-        require(!nftVotes[_nftAddress][msg.sender].exists, "1V");
+    modifier oneVoteEach(address _nftAddress, uint tokenid) {
+        require(!nftVotes[_nftAddress][tokenid][msg.sender].exists, "1V");
         _;
     }
     
@@ -150,135 +165,135 @@ contract PpContract is ERC20 {
     }
     
     //The following 7 modifiers enforce the proper progression of a session 
-    modifier votingSessionComplete(address _nftAddress) {
-        require(block.timestamp >= AllPricingSessions[_nftAddress].endTime, "PSO");
+    modifier votingSessionComplete(address _nftAddress, uint tokenid) {
+        require(block.timestamp >= AllPricingSessions[_nftAddress][tokenid].endTime, "PSO");
         _;
     }
     
-    modifier votesWeightedComplete(address _nftAddress) {
-        require(AllPricingSessions[_nftAddress].votesWeighted == true || 
-            block.timestamp > AllPricingSessions[_nftAddress].endTime + 1 days, "WVW"); 
+    modifier votesWeightedComplete(address _nftAddress, uint tokenid) {
+        require(AllPricingSessions[_nftAddress][tokenid].votesWeighted == true || 
+            block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 1 days, "WVW"); 
         _;
     }
     
-    modifier finalAppraisalComplete(address _nftAddress) {
-        require(AllPricingSessions[_nftAddress].finalAppraisalSet == true, "WFA");
+    modifier finalAppraisalComplete(address _nftAddress, uint tokenid) {
+        require(AllPricingSessions[_nftAddress][tokenid].finalAppraisalSet == true, "WFA");
         _;
     }
 
-    modifier baseCalculatedComplete(address _nftAddress) {
-        require(AllPricingSessions[_nftAddress].baseCalculated == true ||
-            block.timestamp > AllPricingSessions[_nftAddress].endTime + 2 days, "WBC");
+    modifier baseCalculatedComplete(address _nftAddress, uint tokenid) {
+        require(AllPricingSessions[_nftAddress][tokenid].baseCalculated == true ||
+            block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 2 days, "WBC");
         _;
     }
     
-    modifier coinsIssuedComplete(address _nftAddress) {
-        require(AllPricingSessions[_nftAddress].coinsIssued == true ||
-            block.timestamp > AllPricingSessions[_nftAddress].endTime + 4 days, "WCI");
+    modifier coinsIssuedComplete(address _nftAddress, uint tokenid) {
+        require(AllPricingSessions[_nftAddress][tokenid].coinsIssued == true ||
+            block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 4 days, "WCI");
         _;
     }
 
-    modifier lossHarvestedComplete(address _nftAddress) {
-        require(AllPricingSessions[_nftAddress].lossHarvested == true ||
-            block.timestamp > AllPricingSessions[_nftAddress].endTime + 4 days, "WLH");
+    modifier lossHarvestedComplete(address _nftAddress, uint tokenid) {
+        require(AllPricingSessions[_nftAddress][tokenid].lossHarvested == true ||
+            block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 6 days, "WLH");
         _;
     }
     
-    modifier checkSessionActive(address _nftAddress) {
-        require(AllPricingSessions[_nftAddress].active = true);
+    modifier checkSessionActive(address _nftAddress, uint tokenid) {
+        require(AllPricingSessions[_nftAddress][tokenid].active = true);
         _;
     }
     
     //Create a new pricing session
-    function createPricingSession(address _nftAddress) stopOverwrite(_nftAddress) public {
+    function createPricingSession(address _nftAddress, uint tokenid) stopOverwrite(_nftAddress, tokenid) public {
         //Create new instance of PricingSession
         PricingSession memory newSession;
         //Assign new instance to NFT address
-        AllPricingSessions[_nftAddress] = newSession;
+        AllPricingSessions[_nftAddress][tokenid] = newSession;
         //Set start time of pricing session
-        AllPricingSessions[_nftAddress].startTime = block.timestamp;
+        AllPricingSessions[_nftAddress][tokenid].startTime = block.timestamp;
         //Set end time of pricing session
-        AllPricingSessions[_nftAddress].endTime = block.timestamp + 1 days;
+        AllPricingSessions[_nftAddress][tokenid].endTime = block.timestamp + 1 days;
         //Set initial super high lowest stake so its inevitably overwritten
-        AllPricingSessions[_nftAddress].lowestStake = 10000000 ether;
+        AllPricingSessions[_nftAddress][tokenid].lowestStake = 10000000 ether;
         //Switch pricing session to active 
-        AllPricingSessions[_nftAddress].active = true;
+        AllPricingSessions[_nftAddress][tokenid].active = true;
         //Add new NFT address to list of addresses 
-        nftAddresses.push(_nftAddress);
-        emit sessionCreated(block.timestamp, block.timestamp + 1 days, _nftAddress);
+        listOfNfts.push(NftInformation(_nftAddress, tokenid));
+        emit sessionCreated(block.timestamp, block.timestamp + 1 days, _nftAddress, tokenid);
     }
     
     /* 
     This function allows users to create a new vote for an NFT. 
     */
-    function setVote(uint _appraisal, address _nftAddress) checkStake isActive(_nftAddress) oneVoteEach(_nftAddress) payable public {
+    function setVote(uint _appraisal, address _nftAddress, uint tokenid) checkStake isActive(_nftAddress, tokenid) oneVoteEach(_nftAddress, tokenid) payable public {
         //Create a new Voter instance
         Voter memory newVote = Voter(0, _appraisal, msg.value, true);
-        if (msg.value < AllPricingSessions[_nftAddress].lowestStake) {
-            AllPricingSessions[_nftAddress].lowestStake = msg.value;
+        if (msg.value < AllPricingSessions[_nftAddress][tokenid].lowestStake) {
+            AllPricingSessions[_nftAddress][tokenid].lowestStake = msg.value;
         }
         //Add to total appraisal value for final appraisal calculation
-        totalAppraisalValue[_nftAddress] += _appraisal;
-        AllPricingSessions[_nftAddress].totalVotes ++;
+        totalAppraisalValue[_nftAddress][tokenid] += _appraisal;
+        AllPricingSessions[_nftAddress][tokenid].totalVotes ++;
         //Add to total session stake to for reward purposes later on in issueCoin equation
-        AllPricingSessions[_nftAddress].totalSessionStake += msg.value;
+        AllPricingSessions[_nftAddress][tokenid].totalSessionStake += msg.value;
         //Attach new msg.sender address to newVote (i.e. new Voter struct)
-        nftVotes[_nftAddress][msg.sender] = newVote;
+        nftVotes[_nftAddress][tokenid][msg.sender] = newVote;
         //Add voter to addressesPerNft for tracking unique voters
-        addressesPerNft[_nftAddress].push(msg.sender);
+        addressesPerNft[_nftAddress][tokenid].push(msg.sender);
         //Update sessions participated for user look up ability
-        userSessionsParticipated[msg.sender].push(_nftAddress);
-        emit newVoteCreated(_nftAddress, msg.sender, _appraisal, msg.value);
+        userSessionsParticipated[msg.sender].push(NftInformation(_nftAddress, tokenid));
+        emit newVoteCreated(_nftAddress, tokenid, msg.sender, _appraisal, msg.value);
     }
     
      /* 
     Each vote is weighted based on the lowest stake. So lowest stake starts as 1 vote 
     and the rest of the votes are weighted as a multiple of that. Eq --> sqrt(stake/lowestStake)
     */
-    function weightVote(address _nftAddress) votingSessionComplete(_nftAddress) public {
-        if(block.timestamp > AllPricingSessions[_nftAddress].endTime + 1 days) {
-            AllPricingSessions[_nftAddress].votesWeighted = true;
+    function weightVote(address _nftAddress, uint tokenid) votingSessionComplete(_nftAddress, tokenid) public {
+        if(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 1 days) {
+            AllPricingSessions[_nftAddress][tokenid].votesWeighted = true;
         }
-        require(AllPricingSessions[_nftAddress].votesWeighted == false);
+        require(AllPricingSessions[_nftAddress][tokenid].votesWeighted == false);
         //Weighting user at <address a> vote based on lowestStake
-        uint weight = sqrtLibrary.sqrt(nftVotes[_nftAddress][msg.sender].stake/AllPricingSessions[_nftAddress].lowestStake);
+        uint weight = sqrtLibrary.sqrt(nftVotes[_nftAddress][tokenid][msg.sender].stake/AllPricingSessions[_nftAddress][tokenid].lowestStake);
         //Add weighted amount of votes to PricingSession total votes for calculating setFinalAppraisal
-        AllPricingSessions[_nftAddress].totalVotes += weight-1;
+        AllPricingSessions[_nftAddress][tokenid].totalVotes += weight-1;
         //weight - 1 since one instance was already added in initial setVote function
-        totalAppraisalValue[_nftAddress] += (weight-1) * nftVotes[_nftAddress][msg.sender].appraisal;
+        totalAppraisalValue[_nftAddress][tokenid] += (weight-1) * nftVotes[_nftAddress][tokenid][msg.sender].appraisal;
         //Track to end session
-        AllPricingSessions[_nftAddress].amountVotesWeighted ++;
-        if (AllPricingSessions[_nftAddress].amountVotesWeighted == addressesPerNft[_nftAddress].length){
-            AllPricingSessions[_nftAddress].votesWeighted = true;
+        AllPricingSessions[_nftAddress][tokenid].amountVotesWeighted ++;
+        if (AllPricingSessions[_nftAddress][tokenid].amountVotesWeighted == addressesPerNft[_nftAddress][tokenid].length){
+            AllPricingSessions[_nftAddress][tokenid].votesWeighted = true;
         }
         else {
-            AllPricingSessions[_nftAddress].votesWeighted = false;
+            AllPricingSessions[_nftAddress][tokenid].votesWeighted = false;
         }
     }
     
     /*
     Function used to set the final appraisal of a pricing session
     */
-    function setFinalAppraisal(address _nftAddress) votesWeightedComplete(_nftAddress) public {
+    function setFinalAppraisal(address _nftAddress, uint tokenid) votesWeightedComplete(_nftAddress, tokenid) public {
         //requires that the finalAppraisal has not been set yet
-        require(AllPricingSessions[_nftAddress].finalAppraisalSet == false);
+        require(AllPricingSessions[_nftAddress][tokenid].finalAppraisalSet == false);
         //If a session is larger than 25 people, the user that triggers the final Appraisal is awarded 2 * fourth-rt(session size) tokens.
         uint amount;
-        if (addressesPerNft[_nftAddress].length < 25) {
+        if (addressesPerNft[_nftAddress][tokenid].length < 25) {
             amount = 0;
         }
         else {
-            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress].length));
+            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress][tokenid].length));
         }
         _mint(payable(msg.sender), amount);
         //Set amountOfVoters for tracking unique voters in a pricing session
-        AllPricingSessions[_nftAddress].uniqueVoters = addressesPerNft[_nftAddress].length;
+        AllPricingSessions[_nftAddress][tokenid].uniqueVoters = addressesPerNft[_nftAddress][tokenid].length;
         //Set finalAppraisal by calculating totalAppraisalValue / totalVotes. Scale back the 1000 to make up for scaling method in setVote
-        AllPricingSessions[_nftAddress].finalAppraisal = (totalAppraisalValue[_nftAddress])/(AllPricingSessions[_nftAddress].totalVotes);
-        nftAddresses.push(_nftAddress);
+        AllPricingSessions[_nftAddress][tokenid].finalAppraisal = (totalAppraisalValue[_nftAddress][tokenid])/(AllPricingSessions[_nftAddress][tokenid].totalVotes);
+        listOfNfts.push(NftInformation(_nftAddress, tokenid));
         //End pricingSession
-        AllPricingSessions[_nftAddress].finalAppraisalSet = true;
-        emit finalAppraisalDetermined(_nftAddress, AllPricingSessions[_nftAddress].finalAppraisal, AllPricingSessions[_nftAddress].uniqueVoters);
+        AllPricingSessions[_nftAddress][tokenid].finalAppraisalSet = true;
+        emit finalAppraisalDetermined(_nftAddress, tokenid, AllPricingSessions[_nftAddress][tokenid].finalAppraisal, AllPricingSessions[_nftAddress][tokenid].uniqueVoters);
     }
     
     /*
@@ -303,21 +318,21 @@ contract PpContract is ERC20 {
     Refer to calculateBaseLibrary on github for implementation
     */
 
-    function calculateBase(address _nftAddress) finalAppraisalComplete(_nftAddress) public {
+    function calculateBase(address _nftAddress, uint tokenid) finalAppraisalComplete(_nftAddress, tokenid) public {
         //Set consequence for users that don't calculate their base before the window closes
-        nftVotes[_nftAddress][msg.sender].base = 0;
-        require(AllPricingSessions[_nftAddress].baseCalculated == false &&
-            !(block.timestamp > AllPricingSessions[_nftAddress].endTime + 2 days));
+        nftVotes[_nftAddress][tokenid][msg.sender].base = 0;
+        require(AllPricingSessions[_nftAddress][tokenid].baseCalculated == false &&
+            !(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 2 days));
         /*
         Each of the following test the voters guess starting from 105 (5% above) and going down to 95 (5% below). 
-        If true nftVotes[_nftAddress][a].base is set to reflect the users base reward
+        If true nftVotes[_nftAddress][tokenid][a].base is set to reflect the users base reward
         */
         
         //Calculates users base reward (Reference library implementation)
-        nftVotes[_nftAddress][msg.sender].base = 
+        nftVotes[_nftAddress][tokenid][msg.sender].base = 
             calculateBaseLibrary.calculateBase(
-                AllPricingSessions[_nftAddress].finalAppraisal, 
-                nftVotes[_nftAddress][msg.sender].appraisal
+                AllPricingSessions[_nftAddress][tokenid].finalAppraisal, 
+                nftVotes[_nftAddress][tokenid][msg.sender].appraisal
                 );
     }
     
@@ -329,18 +344,17 @@ contract PpContract is ERC20 {
                    accuracy (base)
     Equation = base * sqrt(personal stake) * sqrt(size of pricing session) * fourth-rt(total ETH in staking pool)
     */
-    function issueCoins(address _nftAddress) public baseCalculatedComplete(_nftAddress) returns(bool){
-        require(AllPricingSessions[_nftAddress].coinsIssued == false &&
-            block.timestamp < AllPricingSessions[_nftAddress].endTime + 4 days);
+    function issueCoins(address _nftAddress, uint tokenid) public baseCalculatedComplete(_nftAddress, tokenid) returns(bool){
+        require(AllPricingSessions[_nftAddress][tokenid].coinsIssued == false &&
+            block.timestamp < AllPricingSessions[_nftAddress][tokenid].endTime + 4 days);
         uint amount; 
         //If pricing session size is under 20 users participants receive no reward, to stop users from making obscure pricing sessions
-        if (addressesPerNft[_nftAddress].length < 20) {
+        if (addressesPerNft[_nftAddress][tokenid].length < 20) {
             amount = 0;
         }
         //If pricing session is 20 or larger then the pricing equation kicks in
-        else if (addressesPerNft[_nftAddress].length >= 20) {
-            amount = (nftVotes[_nftAddress][msg.sender].base * sqrtLibrary.sqrt(nftVotes[_nftAddress][msg.sender].stake) * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress].length)) * 
-                sqrtLibrary.sqrt(AllPricingSessions[_nftAddress].totalSessionStake)/sqrtLibrary.sqrt(10**18))/sqrtLibrary.sqrt(10**18);
+        else if (addressesPerNft[_nftAddress][tokenid].length >= 20) {
+            amount = IssueCoinComp.calcIssue(nftVotes[_nftAddress][tokenid][msg.sender].base, nftVotes[_nftAddress][tokenid][msg.sender].stake, addressesPerNft[_nftAddress][tokenid].length, AllPricingSessions[_nftAddress][tokenid].totalSessionStake);
         }
         //Mints the coins based on earned tokens and sends them to user at address a
         _mint(msg.sender, amount);
@@ -356,14 +370,14 @@ contract PpContract is ERC20 {
             isCoinHolder[msg.sender] = true;
         }
         //Adds to total tokens issued
-        AllPricingSessions[_nftAddress].tokensIssued += amount;
-        AllPricingSessions[_nftAddress].coinIssueEvents++;
+        AllPricingSessions[_nftAddress][tokenid].tokensIssued += amount;
+        AllPricingSessions[_nftAddress][tokenid].coinIssueEvents++;
         
-        if (AllPricingSessions[_nftAddress].coinIssueEvents == addressesPerNft[_nftAddress].length){
-            AllPricingSessions[_nftAddress].coinsIssued = true;
+        if (AllPricingSessions[_nftAddress][tokenid].coinIssueEvents == addressesPerNft[_nftAddress][tokenid].length){
+            AllPricingSessions[_nftAddress][tokenid].coinsIssued = true;
         }
         else {
-            AllPricingSessions[_nftAddress].coinsIssued = false;
+            AllPricingSessions[_nftAddress][tokenid].coinsIssued = false;
         }
         emit coinsIssued(amount, msg.sender);
         //returns true if function ran smoothly and correctly executed
@@ -376,81 +390,59 @@ contract PpContract is ERC20 {
     
     Should return amount total loss harvest amount 
     */
-    function harvestLoss(address _nftAddress) coinsIssuedComplete(_nftAddress) public {
-        require(AllPricingSessions[_nftAddress].lossHarvested == true &&
-            block.timestamp < AllPricingSessions[_nftAddress].endTime + 6 days);
+    function harvestLoss(address _nftAddress, uint tokenid) coinsIssuedComplete(_nftAddress, tokenid) public {
+        require(AllPricingSessions[_nftAddress][tokenid].lossHarvested == true &&
+            block.timestamp < AllPricingSessions[_nftAddress][tokenid].endTime + 6 days);
        /*
        Checks users that are out of the money for how far over (in first if statement) 
        or under (in else if) they are and adjusts their stake balance accordingly
        */
-        require(nftVotes[_nftAddress][msg.sender].stake > 0);
-        if (nftVotes[_nftAddress][msg.sender].appraisal*100 > 105*AllPricingSessions[_nftAddress].finalAppraisal){
-            //Harvests loss for users that priced higher than 5% above finalAppraisal
-            uint totalHarvestedOver= harvestLossLibrary.harvestUserOver(
-                nftVotes[_nftAddress][msg.sender].stake, 
-                nftVotes[_nftAddress][msg.sender].appraisal, 
-                AllPricingSessions[_nftAddress].finalAppraisal
-                );
+        require(nftVotes[_nftAddress][tokenid][msg.sender].stake > 0);
+        uint amountHarvested;
+        amountHarvested = harvestLossLibrary.harvest( 
+            nftVotes[_nftAddress][tokenid][msg.sender].stake, 
+            nftVotes[_nftAddress][tokenid][msg.sender].appraisal,
+            AllPricingSessions[_nftAddress][tokenid].finalAppraisal
+            );
                 
-            AllPricingSessions[_nftAddress].lossPoolTotal += totalHarvestedOver;
-            nftVotes[_nftAddress][msg.sender].stake = 
-                nftVotes[_nftAddress][msg.sender].stake - totalHarvestedOver;
-            lossPoolDistributionSession[nonce] += totalHarvestedOver;
-            profitGenerated += totalHarvestedOver;
+            AllPricingSessions[_nftAddress][tokenid].lossPoolTotal += amountHarvested;
+            nftVotes[_nftAddress][tokenid][msg.sender].stake -= amountHarvested;
+            if(lossPoolDistributionSession[nonce].active = true) {
+                lossPoolDistributionSession[nonce + 1].poolSize += amountHarvested;
+            }
+            else {
+                lossPoolDistributionSession[nonce].poolSize += amountHarvested;
+            }
+            profitGenerated += amountHarvested;
             
             //Send stake back and emit event confirming
-            payable(msg.sender).transfer(nftVotes[_nftAddress][msg.sender].stake);
-            nftVotes[_nftAddress][msg.sender].stake = 0;
-            emit stakeRefunded(nftVotes[_nftAddress][msg.sender].stake, msg.sender);
-        }
-        else if(nftVotes[_nftAddress][msg.sender].appraisal*100 < 95*AllPricingSessions[_nftAddress].finalAppraisal){
-            //Harvests loss for users that priced lower than 5% below finalAppraisal 
-            uint totalHarvestedUnder = harvestLossLibrary.harvestLossUnder(
-                nftVotes[_nftAddress][msg.sender].stake, 
-                nftVotes[_nftAddress][msg.sender].appraisal, 
-                AllPricingSessions[_nftAddress].finalAppraisal
-                );
-                
-            AllPricingSessions[_nftAddress].lossPoolTotal += totalHarvestedUnder;
-            nftVotes[_nftAddress][msg.sender].stake = 
-                nftVotes[_nftAddress][msg.sender].stake - totalHarvestedUnder;
-            lossPoolDistributionSession[nonce] += totalHarvestedUnder;
-            profitGenerated += totalHarvestedUnder;
-                
-            //Send stake back and emit event confirming
-            payable(msg.sender).transfer(nftVotes[_nftAddress][msg.sender].stake);
-            nftVotes[_nftAddress][msg.sender].stake = 0;
-            emit stakeRefunded(nftVotes[_nftAddress][msg.sender].stake, msg.sender);
-        }
-        else {
-            //Send stake back and emit event confirming
-            payable(msg.sender).transfer(nftVotes[_nftAddress][msg.sender].stake);
-            nftVotes[_nftAddress][msg.sender].stake = 0;
-            emit stakeRefunded(nftVotes[_nftAddress][msg.sender].stake, msg.sender);
-        }
-        AllPricingSessions[_nftAddress].lossHarvestEvents++;
+            payable(msg.sender).transfer(nftVotes[_nftAddress][tokenid][msg.sender].stake);
+            nftVotes[_nftAddress][tokenid][msg.sender].stake = 0;
+            emit stakeRefunded(nftVotes[_nftAddress][tokenid][msg.sender].stake, msg.sender); 
+
+        AllPricingSessions[_nftAddress][tokenid].lossHarvestEvents++;
         
-        if (AllPricingSessions[_nftAddress].lossHarvestEvents == addressesPerNft[_nftAddress].length){
-            AllPricingSessions[_nftAddress].lossHarvested = true;
+        if (AllPricingSessions[_nftAddress][tokenid].lossHarvestEvents == addressesPerNft[_nftAddress][tokenid].length){
+            AllPricingSessions[_nftAddress][tokenid].lossHarvested = true;
         }
         else {
-            AllPricingSessions[_nftAddress].lossHarvested = false;
+            AllPricingSessions[_nftAddress][tokenid].lossHarvested = false;
         }
     } 
     
-    function endSession(address _nftAddress) checkSessionActive(_nftAddress) public {
-        require(block.timestamp > AllPricingSessions[_nftAddress].endTime + 6 days);
+    function endSession(address _nftAddress, uint tokenid) checkSessionActive(_nftAddress, tokenid) public {
+        require(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 6 days);
         uint amount;
-        if (addressesPerNft[_nftAddress].length < 25) {
+        if (addressesPerNft[_nftAddress][tokenid].length < 25) {
             amount = 0;
         }
         else {
-            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress].length));
+            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress][tokenid].length));
         }
         _mint(payable(msg.sender), amount);
         totalCoinsIssued += amount;
-        AllPricingSessions[_nftAddress].tokensIssued += amount;
-        AllPricingSessions[_nftAddress].active = false;
+        AllPricingSessions[_nftAddress][tokenid].tokensIssued += amount;
+        AllPricingSessions[_nftAddress][tokenid].active = false;
     }
     
     /*
@@ -468,27 +460,28 @@ contract PpContract is ERC20 {
         //Make sure the msg.sender hasn't drawn from this session yet, its 30 days after last session, session still has ETH
         require(lossPoolAccessCheck[nonce][msg.sender] == false 
             && lPDSstartTime[nonce] >= lPDSstartTime[nonce - 1] + 32 days 
-            && lossPoolDistributionSession[nonce] > 0);
+            && lossPoolDistributionSession[nonce].poolSize > 0);
         //Receiver is any owner of a $PP. Splits up contract balance and multiplies share per coin by user balancOf coins
         lossPoolAccessCheck[nonce][msg.sender] = true;
         //Send msg.sender their portion of the loss pool
-        payable(msg.sender).transfer(balanceOf(msg.sender) * lossPoolDistributionSession[nonce]/totalSupply());
+        payable(msg.sender).transfer(balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim);
         //Adjust lossPool balance to reflect ^^ transaction
-        lossPoolDistributionSession[nonce] -= balanceOf(msg.sender) * lossPoolDistributionSession[nonce]/totalSupply();
-        emit lossPoolDistributed(balanceOf(msg.sender) * lossPoolDistributionSession[nonce]/totalSupply(), msg.sender);
+        lossPoolDistributionSession[nonce].poolSize -= balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim;
+        lossPoolDistributionSession[nonce].PpToClaim -= balanceOf(msg.sender);
+        emit lossPoolDistributed(balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim, msg.sender);
         
         //Check if session has been completely drawn down, or the session has passed its time limit if either is true end the session
-        if (lossPoolDistributionSession[nonce] == 0 || lPDSstartTime[nonce] + 2 days < block.timestamp){
+        if (lossPoolDistributionSession[nonce].poolSize == 0 || lPDSstartTime[nonce] + 2 days < block.timestamp){
             nonce++;
-            lossPoolDistributionSession[nonce] += lossPoolDistributionSession[nonce - 1];
-            lossPoolDistributionSession[nonce - 1] = 0;
+            lossPoolDistributionSession[nonce].poolSize += lossPoolDistributionSession[nonce - 1].poolSize;
+            lossPoolDistributionSession[nonce - 1].poolSize = 0;
         }
         
         return true;
     }
     
     function getLossPoolRemainder() view public returns(uint) {
-        return lossPoolDistributionSession[nonce];
+        return lossPoolDistributionSession[nonce].poolSize;
     }
     
     function getProfitsGenerated() view public returns(uint) {
@@ -499,27 +492,39 @@ contract PpContract is ERC20 {
         return totalSupply();
     }
     
-    function getTotalSessionStake(address _nftAddress) view public returns(uint) {
-        return AllPricingSessions[_nftAddress].totalSessionStake;
+    function getTotalSessionStake(address _nftAddress, uint tokenid) view public returns(uint) {
+        return AllPricingSessions[_nftAddress][tokenid].totalSessionStake;
     }
     
-    function getEndTime(address _nftAddress) view public returns(uint) {
-        return AllPricingSessions[_nftAddress].endTime;
+    function getEndTime(address _nftAddress, uint tokenid) view public returns(uint) {
+        return AllPricingSessions[_nftAddress][tokenid].endTime;
     }
     
-    function getTotalVoters(address _nftAddress) view public returns(uint) {
-        return addressesPerNft[_nftAddress].length;
+    function getTotalVoters(address _nftAddress, uint tokenid) view public returns(uint) {
+        return addressesPerNft[_nftAddress][tokenid].length;
     }
     
-    function getVote(address _nftAddress) view public returns(uint) {
-        return nftVotes[_nftAddress][msg.sender].appraisal;
+    function getVote(address _nftAddress, uint tokenid) view public returns(uint) {
+        return nftVotes[_nftAddress][tokenid][msg.sender].appraisal;
     }
     
-    function getStake(address _nftAddress) view public returns(uint) {
-        return nftVotes[_nftAddress][msg.sender].stake;
+    function getStake(address _nftAddress, uint tokenid) view public returns(uint) {
+        return nftVotes[_nftAddress][tokenid][msg.sender].stake;
     }
     
-    function getFinalAppraisal(address _nftAddress) view public returns(uint) {
-        return AllPricingSessions[_nftAddress].finalAppraisal;
+    function getFinalAppraisal(address _nftAddress, uint tokenid) view public returns(uint) {
+        return AllPricingSessions[_nftAddress][tokenid].finalAppraisal;
     } 
+
+    function getTimeLeft() view public returns(uint) {
+        return 32 days + lPDSstartTime[nonce-1] - block.timestamp; 
+    }
+
+    function getClaimActive() view public returns(bool) {
+        return 32 days + lPDSstartTime[nonce-1] > block.timestamp;
+    }
+
+    function getLossPoolPortion() view public returns(uint) {
+        return balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim;
+    }
 }
