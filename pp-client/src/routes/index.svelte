@@ -12,6 +12,14 @@
         // TODO (Alan): Replace link
         open("https://www.github.com", "blank")
     }
+
+    function openTwitter() {
+        open("https://twitter.com/PricingProtocol", "blank")
+    }
+
+    function openDiscord() {
+        open("http://discord.gg/WZUv4y5rPd", "blank")
+    }
 </script>
 
 <div class="container">
@@ -53,8 +61,8 @@
     <div class="socials">
         <!-- TODO (Alan): The images you had on Figma were fugged,
 			but should be able to just replace them in static folder -->
-        <img src="twitter.png" />
-        <img src="discord.png" />
+        <img src="twitter.svg" />
+        <img src="discord.svg" />
     </div>
 </div>
 
@@ -122,11 +130,13 @@
     }
 
     .socials {
+        cursor: pointer;
         position: absolute;
-        bottom: 48px;
+        bottom: 30px;
+        right: 50px;
 
         img {
-            width: 80px;
+            width: 50px;
             margin: 0 12px;
         }
     }

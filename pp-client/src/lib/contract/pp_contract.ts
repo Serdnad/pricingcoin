@@ -56,6 +56,7 @@ export module PpContract {
     }
 
     // TODO (Alan): Write wrappers for other contract methods
+
 }
 
 export default PpContract

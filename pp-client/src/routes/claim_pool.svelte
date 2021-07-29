@@ -1,5 +1,4 @@
 <script>
-    import CurrencyIcon from "$lib/components/common/CurrencyIcon.svelte"
     import NavBar from "$lib/components/common/NavBar.svelte"
 </script>
 
@@ -10,11 +9,11 @@
     <div class="container">
         <!-- TODO (Alan): Substitute placeholders -->
         <!-- TODO: Include images -->
-        <p>Pool Size: 100.3 <CurrencyIcon currency="eth" /></p>
+        <p>Pool Size: 100.3 ETH</p>
         <p>Active: No</p>
         <p>Time Left: 13 days</p>
-        <p>Coin Balance: 10k <CurrencyIcon currency="pp" /></p>
-        <p>Claim Size: 0.02 <CurrencyIcon currency="eth" /></p>
+        <p>Coin Balance: 10k $PP</p>
+        <p>Claim Size: 0.02 ETH</p>
 
         <div class="button-container">
             <button>Claim</button>
