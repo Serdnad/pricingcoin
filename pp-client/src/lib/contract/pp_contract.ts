@@ -27,6 +27,7 @@ export module PpContract {
         const provider = new ethers.providers.Web3Provider(window.ethereum)
         const signer = provider.getSigner()
 
+
         // replace contract connection with signer
         contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
     }
@@ -53,6 +54,24 @@ export module PpContract {
         if (contract == null) await initialize()
 
         return contract.store(value)
+    }
+
+    export async function getLossPoolRemainder(): Promise<ethers.BigNumberish> {
+        if (contract == null) await initialize()
+
+        return contract.getLossPoolRemainder()
+    }
+
+    export async function getProfitsGenerated(): Promise<ethers.BigNumberish> {
+        if (contract == null) await initialize()
+
+        return contract.getProfitsGenerated()
+    }
+
+    export async function getTotalCoinsIssued() {
+        if (contract == null) await initialize()
+
+        return contract.getTotalCoinsIssued()
     }
 
     // TODO (Alan): Write wrappers for other contract methods
