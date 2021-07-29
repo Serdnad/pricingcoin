@@ -1,5 +1,6 @@
 <script lang="ts">
-    import type Session from "$lib/models/session"
+    import { session } from "$app/stores"
+import type Session from "$lib/models/session"
     import SessionPopup from "./SessionPopup.svelte"
 
     export let sessions: Session[]
@@ -24,6 +25,7 @@
         <tr>
             <th />
             <th>NFT Contract</th>
+            <th>Token ID</th>
             <th>End Time</th>
             {#if isMySessions}
                 <th>Status</th>
@@ -38,6 +40,7 @@
             <tr>
                 <td>{index + 1}</td>
                 <td>{session.contract}</td>
+                <td>{session.tokenid}</td>
                 <td>{session.end}</td>
                 {#if isMySessions}
                     <td>{session.status}</td>

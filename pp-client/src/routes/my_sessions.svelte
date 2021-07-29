@@ -6,7 +6,7 @@
     import Session from "$lib/models/session"
 
     // TODO (Alan): Load sessions from wherever
-    let tmp = new Session("0x28990a298acd67cfe133ef37758930ce92adbf64", Date.now() + "", 1000, "Voting", "200.5")
+    let tmp = new Session("0x28990a298acd67cfe133ef37758930ce92adbf64", 123412, Date.now() + "", 1000, "Voting", "200.5")
     let sessions = [tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp]
 </script>
 
@@ -18,7 +18,10 @@
 
     <p>Know NFT address? Find it faster by<br />pasting contract address below!</p>
     <div class="input-group">
-        <TextInput placeholder="NFT contract number here" />
+        <TextInput placeholder="NFT contract address here" />
+        <br />
+        <TextInput placeholder="NFT token ID here" />
+        <br />
         <Button text={"Submit"} />
     </div>
 </div>

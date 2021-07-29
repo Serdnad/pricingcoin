@@ -38,7 +38,10 @@
             <div>
                 <p>Create New Session</p>
                 <div>
-                    <TextInput placeholder="NFT contract number here" />
+                    <TextInput placeholder="NFT contract address here" />
+                    <br />
+                    <TextInput placeholder="NFT token ID here" />
+                    <br />
                     <Button text={"Submit"} />
                 </div>
             </div>
@@ -46,7 +49,10 @@
             <div>
                 <p>Find Active Session</p>
                 <div>
-                    <TextInput placeholder="NFT contract number here" />
+                    <TextInput placeholder="NFT contract address here" />
+                    <br />
+                    <TextInput placeholder="NFT token ID here" />
+                    <br />
                     <Button text={"Submit"} />
                 </div>
             </div>
@@ -54,7 +60,10 @@
             <div>
                 <p>Find Past Sessions</p>
                 <div>
-                    <TextInput placeholder="NFT contract number here" />
+                    <TextInput placeholder="NFT contract address here" />
+                    <br />
+                    <TextInput placeholder="NFT token ID here" />
+                    <br />
                     <Button text={"Submit"} />
                 </div>
             </div>

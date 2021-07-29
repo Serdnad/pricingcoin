@@ -16,6 +16,7 @@
         box-sizing: border-box;
 
         padding: 8px 12px 4px 12px;
-        margin-left: 8px;
+        margin-left: 70px;
+        margin-top: 10px;
     }
 </style>
