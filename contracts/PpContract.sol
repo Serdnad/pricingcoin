@@ -14,10 +14,13 @@ contract PpContract is ERC20 {
     using calculateBaseLibrary for *;
     using sqrtLibrary for *;
     using harvestLossLibrary for *;
+    using IssueCoinComp for *;
+    using WeightVote for *;
     
     //Initial constructor for the entire Pricing Protocol contract
     constructor(uint256 initialSupply) ERC20("PricingCoin", "PP") {
         _mint(msg.sender, initialSupply);
+        coinBalance[nonce][msg.sender] += initialSupply;
         nonce = 1;
     }
     
@@ -27,20 +30,12 @@ contract PpContract is ERC20 {
     //tracks total amount of coins generated during life of protocol
     uint totalCoinsIssued;
     //
-    uint nftsPriced;
+    uint public nftsPriced;
     //tracks the current nonce (i.e. number lossPoolDistribution session)
     uint nonce;
-    
-    //Total amount of NFTs that have been priced using pricing protocol
-    NftInformation[] public listOfNfts;
-    //Keep track of all unique coin holder addresses 
-    address[] coinHolders; 
+
     
     // ============ Mappings ============
-    //Mapping to check if a user is already considered a coin holder
-    mapping(address => bool) isCoinHolder;
-    //Maps the total appraisal value to an NFT address to be used for mapping finalAppraisal to specific NFT address
-    mapping(address => mapping(uint => uint)) totalAppraisalValue;
     //Mapping used to track how many voters have voted on a particular NFT
     mapping(address => mapping(uint => address[])) addressesPerNft;
     //Easily accesible pricing session lookup 
@@ -55,6 +50,8 @@ contract PpContract is ERC20 {
     mapping(uint => uint) lPDSstartTime;
     //
     mapping(uint => DistributeSession) lossPoolDistributionSession;
+    //
+    mapping(uint => mapping(address => uint)) public coinBalance;
     
     // ============ Structs ============
     //Voter struct to allow users to submit votes, stake, and track that the user has already voted (i.e. exists = true) 
@@ -78,6 +75,8 @@ contract PpContract is ERC20 {
         uint startTime;
         //Session end time is 1 day after start time
         uint endTime;
+        //
+        uint totalAppraisalValue;
         //Final appraisal calculated using --> weight per user * appraisal per user
         uint finalAppraisal;
         //Keep track of amount of unique voters (by address) in pricing session
@@ -219,7 +218,6 @@ contract PpContract is ERC20 {
         //Switch pricing session to active 
         AllPricingSessions[_nftAddress][tokenid].active = true;
         //Add new NFT address to list of addresses 
-        listOfNfts.push(NftInformation(_nftAddress, tokenid));
         emit sessionCreated(block.timestamp, block.timestamp + 1 days, _nftAddress, tokenid);
     }
     
@@ -233,14 +231,14 @@ contract PpContract is ERC20 {
             AllPricingSessions[_nftAddress][tokenid].lowestStake = msg.value;
         }
         //Add to total appraisal value for final appraisal calculation
-        totalAppraisalValue[_nftAddress][tokenid] += _appraisal;
+        AllPricingSessions[_nftAddress][tokenid].totalAppraisalValue += _appraisal;
         AllPricingSessions[_nftAddress][tokenid].totalVotes ++;
         //Add to total session stake to for reward purposes later on in issueCoin equation
         AllPricingSessions[_nftAddress][tokenid].totalSessionStake += msg.value;
         //Attach new msg.sender address to newVote (i.e. new Voter struct)
         nftVotes[_nftAddress][tokenid][msg.sender] = newVote;
         //Add voter to addressesPerNft for tracking unique voters
-        addressesPerNft[_nftAddress][tokenid].push(msg.sender);
+        AllPricingSessions[_nftAddress][tokenid].uniqueVoters ++; 
         //Update sessions participated for user look up ability
         userSessionsParticipated[msg.sender].push(NftInformation(_nftAddress, tokenid));
         emit newVoteCreated(_nftAddress, tokenid, msg.sender, _appraisal, msg.value);
@@ -256,11 +254,11 @@ contract PpContract is ERC20 {
         }
         require(AllPricingSessions[_nftAddress][tokenid].votesWeighted == false);
         //Weighting user at <address a> vote based on lowestStake
-        uint weight = sqrtLibrary.sqrt(nftVotes[_nftAddress][tokenid][msg.sender].stake/AllPricingSessions[_nftAddress][tokenid].lowestStake);
+        uint weight = WeightVote.weightUserVote(nftVotes[_nftAddress][tokenid][msg.sender].stake, AllPricingSessions[_nftAddress][tokenid].lowestStake);
         //Add weighted amount of votes to PricingSession total votes for calculating setFinalAppraisal
         AllPricingSessions[_nftAddress][tokenid].totalVotes += weight-1;
         //weight - 1 since one instance was already added in initial setVote function
-        totalAppraisalValue[_nftAddress][tokenid] += (weight-1) * nftVotes[_nftAddress][tokenid][msg.sender].appraisal;
+        AllPricingSessions[_nftAddress][tokenid].totalAppraisalValue += (weight-1) * nftVotes[_nftAddress][tokenid][msg.sender].appraisal;
         //Track to end session
         AllPricingSessions[_nftAddress][tokenid].amountVotesWeighted ++;
         if (AllPricingSessions[_nftAddress][tokenid].amountVotesWeighted == addressesPerNft[_nftAddress][tokenid].length){
@@ -278,19 +276,16 @@ contract PpContract is ERC20 {
         //requires that the finalAppraisal has not been set yet
         require(AllPricingSessions[_nftAddress][tokenid].finalAppraisalSet == false);
         //If a session is larger than 25 people, the user that triggers the final Appraisal is awarded 2 * fourth-rt(session size) tokens.
-        uint amount;
-        if (addressesPerNft[_nftAddress][tokenid].length < 25) {
-            amount = 0;
-        }
-        else {
-            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress][tokenid].length));
-        }
+        uint amount = sqrtLibrary.appraisalReward(AllPricingSessions[_nftAddress][tokenid].uniqueVoters);
         _mint(payable(msg.sender), amount);
-        //Set amountOfVoters for tracking unique voters in a pricing session
-        AllPricingSessions[_nftAddress][tokenid].uniqueVoters = addressesPerNft[_nftAddress][tokenid].length;
-        //Set finalAppraisal by calculating totalAppraisalValue / totalVotes. Scale back the 1000 to make up for scaling method in setVote
-        AllPricingSessions[_nftAddress][tokenid].finalAppraisal = (totalAppraisalValue[_nftAddress][tokenid])/(AllPricingSessions[_nftAddress][tokenid].totalVotes);
-        listOfNfts.push(NftInformation(_nftAddress, tokenid));
+        if(lossPoolDistributionSession[nonce].active = true) {
+                coinBalance[nonce + 1][msg.sender] += amount;
+            }
+        else {
+                coinBalance[nonce][msg.sender] += amount;
+            }
+        //Set finalAppraisal by calculating totalAppraisalValue / totalVotes.
+        AllPricingSessions[_nftAddress][tokenid].finalAppraisal = (AllPricingSessions[_nftAddress][tokenid].totalAppraisalValue)/(AllPricingSessions[_nftAddress][tokenid].totalVotes);
         //End pricingSession
         AllPricingSessions[_nftAddress][tokenid].finalAppraisalSet = true;
         emit finalAppraisalDetermined(_nftAddress, tokenid, AllPricingSessions[_nftAddress][tokenid].finalAppraisal, AllPricingSessions[_nftAddress][tokenid].uniqueVoters);
@@ -348,27 +343,24 @@ contract PpContract is ERC20 {
         require(AllPricingSessions[_nftAddress][tokenid].coinsIssued == false &&
             block.timestamp < AllPricingSessions[_nftAddress][tokenid].endTime + 4 days);
         uint amount; 
-        //If pricing session size is under 20 users participants receive no reward, to stop users from making obscure pricing sessions
-        if (addressesPerNft[_nftAddress][tokenid].length < 20) {
-            amount = 0;
-        }
-        //If pricing session is 20 or larger then the pricing equation kicks in
-        else if (addressesPerNft[_nftAddress][tokenid].length >= 20) {
-            amount = IssueCoinComp.calcIssue(nftVotes[_nftAddress][tokenid][msg.sender].base, nftVotes[_nftAddress][tokenid][msg.sender].stake, addressesPerNft[_nftAddress][tokenid].length, AllPricingSessions[_nftAddress][tokenid].totalSessionStake);
-        }
+        
+        amount = IssueCoinComp.calcIssue(
+            nftVotes[_nftAddress][tokenid][msg.sender].base, 
+            nftVotes[_nftAddress][tokenid][msg.sender].stake, 
+            addressesPerNft[_nftAddress][tokenid].length, 
+            AllPricingSessions[_nftAddress][tokenid].totalSessionStake
+            );
+
         //Mints the coins based on earned tokens and sends them to user at address a
         _mint(msg.sender, amount);
+        if(lossPoolDistributionSession[nonce].active = true) {
+                coinBalance[nonce + 1][msg.sender] += amount;
+            }
+        else {
+                coinBalance[nonce][msg.sender] += amount;
+            }
         totalCoinsIssued += amount;
-        /*
-        If user is not a coinHolder (i.e. isCoinHolder[a] is false) 
-        this should push them to coinHolders list and set isCoinHolder to true.
-        */
-        if (isCoinHolder[msg.sender] = false) {
-            //Added user to coinHolder list for coin distribution purposes
-            coinHolders.push(msg.sender);
-            //Recognize this holder has been added to the list
-            isCoinHolder[msg.sender] = true;
-        }
+        
         //Adds to total tokens issued
         AllPricingSessions[_nftAddress][tokenid].tokensIssued += amount;
         AllPricingSessions[_nftAddress][tokenid].coinIssueEvents++;
@@ -397,7 +389,6 @@ contract PpContract is ERC20 {
        Checks users that are out of the money for how far over (in first if statement) 
        or under (in else if) they are and adjusts their stake balance accordingly
        */
-        require(nftVotes[_nftAddress][tokenid][msg.sender].stake > 0);
         uint amountHarvested;
         amountHarvested = harvestLossLibrary.harvest( 
             nftVotes[_nftAddress][tokenid][msg.sender].stake, 
@@ -413,12 +404,12 @@ contract PpContract is ERC20 {
             else {
                 lossPoolDistributionSession[nonce].poolSize += amountHarvested;
             }
-            profitGenerated += amountHarvested;
+        profitGenerated += amountHarvested;
             
             //Send stake back and emit event confirming
-            payable(msg.sender).transfer(nftVotes[_nftAddress][tokenid][msg.sender].stake);
-            nftVotes[_nftAddress][tokenid][msg.sender].stake = 0;
-            emit stakeRefunded(nftVotes[_nftAddress][tokenid][msg.sender].stake, msg.sender); 
+        payable(msg.sender).transfer(nftVotes[_nftAddress][tokenid][msg.sender].stake);
+        nftVotes[_nftAddress][tokenid][msg.sender].stake = 0;
+        emit stakeRefunded(nftVotes[_nftAddress][tokenid][msg.sender].stake, msg.sender); 
 
         AllPricingSessions[_nftAddress][tokenid].lossHarvestEvents++;
         
@@ -432,17 +423,33 @@ contract PpContract is ERC20 {
     
     function endSession(address _nftAddress, uint tokenid) checkSessionActive(_nftAddress, tokenid) public {
         require(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 6 days);
-        uint amount;
-        if (addressesPerNft[_nftAddress][tokenid].length < 25) {
-            amount = 0;
-        }
-        else {
-            amount = 2 * sqrtLibrary.sqrt(sqrtLibrary.sqrt(addressesPerNft[_nftAddress][tokenid].length));
-        }
+        uint amount = sqrtLibrary.appraisalReward(addressesPerNft[_nftAddress][tokenid].length);
         _mint(payable(msg.sender), amount);
+        if(lossPoolDistributionSession[nonce].active = true) {
+                coinBalance[nonce + 1][msg.sender] += amount;
+            }
+        else {
+                coinBalance[nonce][msg.sender] += amount;
+            }
+
         totalCoinsIssued += amount;
         AllPricingSessions[_nftAddress][tokenid].tokensIssued += amount;
         AllPricingSessions[_nftAddress][tokenid].active = false;
+    }
+
+    function transfer(address recipient, uint amount) override public returns(bool) {
+        transfer(recipient, amount);
+        if(lossPoolDistributionSession[nonce].active = true) {
+                coinBalance[nonce + 1][recipient] += amount;
+                coinBalance[nonce + 1][msg.sender] -= amount;
+                transfer(recipient, amount);
+            }
+        else {
+                coinBalance[nonce][recipient] += amount;
+                coinBalance[nonce][msg.sender] -= amount;
+                transfer(recipient, amount);
+            }
+        return true;
     }
     
     /*
@@ -463,12 +470,15 @@ contract PpContract is ERC20 {
             && lossPoolDistributionSession[nonce].poolSize > 0);
         //Receiver is any owner of a $PP. Splits up contract balance and multiplies share per coin by user balancOf coins
         lossPoolAccessCheck[nonce][msg.sender] = true;
+        uint transferAmount = coinBalance[nonce][msg.sender] * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim;
         //Send msg.sender their portion of the loss pool
-        payable(msg.sender).transfer(balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim);
+        payable(msg.sender).transfer(transferAmount);
         //Adjust lossPool balance to reflect ^^ transaction
-        lossPoolDistributionSession[nonce].poolSize -= balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim;
-        lossPoolDistributionSession[nonce].PpToClaim -= balanceOf(msg.sender);
-        emit lossPoolDistributed(balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim, msg.sender);
+        lossPoolDistributionSession[nonce].poolSize -= transferAmount;
+        lossPoolDistributionSession[nonce].PpToClaim -= coinBalance[nonce][msg.sender];
+        coinBalance[nonce + 1][msg.sender] += coinBalance[nonce][msg.sender];
+        coinBalance[nonce][msg.sender] = 0;
+        emit lossPoolDistributed(transferAmount, msg.sender);
         
         //Check if session has been completely drawn down, or the session has passed its time limit if either is true end the session
         if (lossPoolDistributionSession[nonce].poolSize == 0 || lPDSstartTime[nonce] + 2 days < block.timestamp){
@@ -476,20 +486,19 @@ contract PpContract is ERC20 {
             lossPoolDistributionSession[nonce].poolSize += lossPoolDistributionSession[nonce - 1].poolSize;
             lossPoolDistributionSession[nonce - 1].poolSize = 0;
         }
-        
         return true;
     }
     
-    function getLossPoolRemainder() view public returns(uint) {
-        return lossPoolDistributionSession[nonce].poolSize;
-    }
-    
-    function getProfitsGenerated() view public returns(uint) {
+    function getProfitGenerated() view public returns(uint) {
         return profitGenerated;
     }
     
     function getTotalCoinsIssued() view public returns(uint) {
-        return totalSupply();
+        return totalCoinsIssued;
+    }
+    
+    function getLossPoolRemainder() view public returns(uint) {
+        return lossPoolDistributionSession[nonce].poolSize;
     }
     
     function getTotalSessionStake(address _nftAddress, uint tokenid) view public returns(uint) {
@@ -501,10 +510,10 @@ contract PpContract is ERC20 {
     }
     
     function getTotalVoters(address _nftAddress, uint tokenid) view public returns(uint) {
-        return addressesPerNft[_nftAddress][tokenid].length;
+        return AllPricingSessions[_nftAddress][tokenid].uniqueVoters;
     }
     
-    function getVote(address _nftAddress, uint tokenid) view public returns(uint) {
+    function getVoteStake(address _nftAddress, uint tokenid) view public returns(uint) {
         return nftVotes[_nftAddress][tokenid][msg.sender].appraisal;
     }
     
@@ -517,14 +526,15 @@ contract PpContract is ERC20 {
     } 
 
     function getTimeLeft() view public returns(uint) {
-        return 32 days + lPDSstartTime[nonce-1] - block.timestamp; 
+        if(block.timestamp > 32 days + lPDSstartTime[nonce-1]) {
+            return 0;
+        }
+        else {
+            return 32 days + lPDSstartTime[nonce-1] - block.timestamp; 
+        }
     }
-
-    function getClaimActive() view public returns(bool) {
-        return 32 days + lPDSstartTime[nonce-1] > block.timestamp;
-    }
-
-    function getLossPoolPortion() view public returns(uint) {
-        return balanceOf(msg.sender) * lossPoolDistributionSession[nonce].poolSize/lossPoolDistributionSession[nonce].PpToClaim;
+    
+    function getPortionPpToClaim() view public returns(uint, uint) {
+        return (nonce, lossPoolDistributionSession[nonce].PpToClaim);
     }
 }
