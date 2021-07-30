@@ -25,7 +25,7 @@
     <div>
         <div class="status-card">
             <p class="header">Claim Pool Status:</p>
-            <p>Size: 100.3 <CurrencyIcon currency="eth" /></p>
+            <p>Size: 100.3 ETH</p>
             <p>Active: No</p>
             <p>Time Left: 13 days</p>
         </div>

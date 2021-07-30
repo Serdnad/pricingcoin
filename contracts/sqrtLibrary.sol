@@ -12,4 +12,13 @@ library sqrtLibrary {
             z = (x / z + z) / 2;
         }
     }
+    
+    function appraisalReward(uint length) internal pure returns (uint) {
+        if(length < 25) {
+            return 0;
+        }
+        else{
+            return 2 * sqrt(sqrt(length));
+        }
+    }
 }
