@@ -28,14 +28,12 @@
         {#if isActive || isMyOwn}
             <div class="top-left-panel">
                 <!-- TODO (Alan): Fill in values -->
+                <p>Session Stake:</p>
                 <p>Participants:</p>
-                <p>Stake:</p>
                 {#if isMyOwn}
+                    <p>Stake: </p>
                     <p>Appraisal:</p>
-                    <p>Weight:</p>
                     <p>Final Appraisal:</p>
-                    <p>Base:</p>
-                    <p>Coins Earned:</p>
                 {/if}
             </div>
         {/if}

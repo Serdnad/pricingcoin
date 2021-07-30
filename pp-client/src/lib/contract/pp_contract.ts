@@ -1,7 +1,7 @@
 import Session from "$lib/models/session"
 import { ethers } from "ethers"
 
-const CONTRACT_ADDRESS = "0x8a03E90bFE59D6CFF6D8f9feAD1b2cc3FcE293d8"
+const CONTRACT_ADDRESS = "0x50b87d1000dE904EEA5a3a27Ff52C2c48932AF9c"
 import CONTRACT_ABI from "./pp_contract_abi.json"
 
 export module PpContract {
@@ -29,6 +29,7 @@ export module PpContract {
 
         // replace contract connection with signer
         contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer)
+        console.log(contract.wallet)
     }
 
 
@@ -56,7 +57,59 @@ export module PpContract {
     }
 
     // TODO (Alan): Write wrappers for other contract methods
+    export async function createPricingSession(address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
 
+        contract.createPricingSession(address, tokenid)
+    }
+
+    export async function setVote(appraisal: ethers.BigNumberish, address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
+
+        return contract.setVote(appraisal, address, tokenid)
+    }
+
+    export async function weightVote(address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
+
+        contract.weightVote(address, tokenid)
+    }
+
+    export async function setFinalAppraisal(address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
+
+        contract.setFinalAppraisal(address, tokenid)
+    }
+
+    export async function calculateBase(address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
+
+        contract.calculateBase(address, tokenid)
+    }
+
+    export async function issueCoins(address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
+
+        contract.issueCoins(address, tokenid)
+    }
+
+    export async function harvestLoss(address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
+
+        contract.harvestLoss(address, tokenid)
+    }
+
+    export async function endSession(address: string, tokenid: ethers.BigNumberish) {
+        if (contract == null) await initialize()
+
+        contract.endSession(address, tokenid)
+    }
+
+    export async function distributeLossPool() {
+        if (contract == null) await initialize()
+
+        contract.distributeLossPool()
+    }
 }
 
 export default PpContract

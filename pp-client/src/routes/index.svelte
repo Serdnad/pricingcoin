@@ -34,7 +34,7 @@
             <button class="special" on:click={launchApp}>Launch App</button>
 
             <div class="text-block">
-                <p>100.3</p>
+                <p>100.3 ETH</p>
                 <p>Earned</p>
             </div>
         </div>
@@ -52,7 +52,7 @@
             <button on:click={openGithub}>Github</button>
 
             <div class="text-block">
-                <p>50M</p>
+                <p>50M PP</p>
                 <p>Earned</p>
             </div>
         </div>
@@ -61,8 +61,8 @@
     <div class="socials">
         <!-- TODO (Alan): The images you had on Figma were fugged,
 			but should be able to just replace them in static folder -->
-        <img src="twitter.svg" />
-        <img src="discord.svg" />
+        <img on:click={openTwitter} src="twitter.svg" />
+        <img on:click={openDiscord} src="discord.svg" />
     </div>
 </div>
 

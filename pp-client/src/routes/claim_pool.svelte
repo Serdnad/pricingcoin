@@ -1,5 +1,10 @@
 <script>
     import NavBar from "$lib/components/common/NavBar.svelte"
+    import PpContract from "$lib/contract/pp_contract";
+
+    function claimPool() {
+        PpContract.distributeLossPool()
+    }
 </script>
 
 <NavBar />
@@ -16,7 +21,7 @@
         <p>Claim Size: 0.02 ETH</p>
 
         <div class="button-container">
-            <button>Claim</button>
+            <button on:click={claimPool}>Claim</button>
         </div>
     </div>
 </div>
@@ -51,6 +56,7 @@
             justify-content: center;
 
             button {
+                cursor: pointer;
                 color: white;
                 background: #1a54ff;
                 border: none;
