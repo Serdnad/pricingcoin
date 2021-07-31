@@ -3,14 +3,14 @@
     import NavBar from "$lib/components/common/NavBar.svelte"
     import SessionsTable from "$lib/components/SessionsTable.svelte"
     import TextInput from "$lib/components/common/TextInput.svelte"
-    import Session from "$lib/models/session"
+    import type Session from "$lib/models/session"
     import { onMount } from "svelte"
     import PpContract from "$lib/contract/pp_contract"
 
     let sessions: Session[] = []
 
     onMount(async () => {
-        sessions = await PpContract.getPricingSessions()
+        sessions = await PpContract.getMyPricingSessions()
     })
 </script>
 

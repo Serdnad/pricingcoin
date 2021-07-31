@@ -45,11 +45,14 @@
 
         {#if isActive || isMyOwn}
             <div class="top-left-panel">
-                <p>Stake: {stake}</p>
+                {#if !isMyOwn}
+                    <p>Session Stake: {sessionStake}</p>
+                {/if}
                 <p>Participants: {participants}</p>
                 {#if isMyOwn}
-                    <p>Session Stake: {sessionStake}</p>
+                    <p>Stake: {stake}</p>
                     <p>Appraisal: {appraisal}</p>
+                    <p>Session Stake: {sessionStake}</p>
                     <p>Final Appraisal: {finalAppraisal}</p>
                 {/if}
             </div>
@@ -91,7 +94,7 @@
                 <div class="row">
                     <TextInput placeholder="Appraisal Price" bind:value={appraisalPrice} />
                     &nbsp;&nbsp; <!-- little hacky but it works -->
-                    <TextInput placeholder="Stake Amount" bind:value={stakeAmount} />
+                    <TextInput placeholder="Stake Amount in Wei" bind:value={stakeAmount} />
                     <Button text="Submit" on:click={setVote} />
                 </div>
             {:else}

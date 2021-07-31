@@ -45,7 +45,7 @@ contract PpContract is ERC20 {
     //Allows pricing protocol to handle multiple NFTs at once by allowing lookup and tracking of different NFTs
     mapping(address => mapping(uint => mapping (address => Voter))) nftVotes;
     //Allow contract to track which NFT sessions a user has participated in
-    mapping(address => NftInformation[]) userSessionsParticipated;
+    mapping(address => NftInformation[]) public userSessionsParticipated;
     //Used to limit user lossPool claims to 1 per rounds
     mapping(uint => mapping(address => bool)) lossPoolAccessCheck;
     //Used to track start time of distribution session 
@@ -85,10 +85,6 @@ contract PpContract is ERC20 {
         uint uniqueVoters;
         //Keep track of totalVotes (takes into account multiple votes attributed during weighting)
         uint totalVotes;
-        //Track the amount of tokens issued in each pricing session
-        uint tokensIssued;
-        //Tracks lossPoolTotal in each pricing session
-        uint lossPoolTotal;
         //Tracks total session stake
         uint totalSessionStake;
         //Track lowest stake, for vote weighting
@@ -357,8 +353,6 @@ contract PpContract is ERC20 {
             }
         totalCoinsIssued += amount;
         
-        //Adds to total tokens issued
-        AllPricingSessions[_nftAddress][tokenid].tokensIssued += amount;
         AllPricingSessions[_nftAddress][tokenid].coinIssueEvents++;
         
         if (AllPricingSessions[_nftAddress][tokenid].coinIssueEvents == AllPricingSessions[_nftAddress][tokenid].uniqueVoters){
@@ -391,8 +385,7 @@ contract PpContract is ERC20 {
             nftVotes[_nftAddress][tokenid][msg.sender].appraisal,
             AllPricingSessions[_nftAddress][tokenid].finalAppraisal
             );
-                
-            AllPricingSessions[_nftAddress][tokenid].lossPoolTotal += amountHarvested;
+
             nftVotes[_nftAddress][tokenid][msg.sender].stake -= amountHarvested;
             if(lossPoolDistributionSession[nonce].active = true) {
                 lossPoolDistributionSession[nonce + 1].poolSize += amountHarvested;
@@ -481,10 +474,6 @@ contract PpContract is ERC20 {
         return lossPoolDistributionSession[nonce].poolSize;
     }
     
-    // function getTotalSessionStake(address _nftAddress, uint tokenid) view public returns(uint) {
-    //     return AllPricingSessions[_nftAddress][tokenid].totalSessionStake;
-    // }
-    
     function getSession(address _nftAddress, uint tokenid) view public returns(uint, uint, uint, uint) {
         uint status;
         if(AllPricingSessions[_nftAddress][tokenid].coinsIssued) {
@@ -511,15 +500,7 @@ contract PpContract is ERC20 {
                 status);
     }
     
-    // function getEndTime(address _nftAddress, uint tokenid) view public returns(uint) {
-    //     return AllPricingSessions[_nftAddress][tokenid].endTime;
-    // }
-    
-    // function getTotalVoters(address _nftAddress, uint tokenid) view public returns(uint) {
-    //     return AllPricingSessions[_nftAddress][tokenid].uniqueVoters;
-    // }
-    
-    function getVoteStake(address _nftAddress, uint tokenid) view public returns(uint) {
+    function getAppraisal(address _nftAddress, uint tokenid) view public returns(uint) {
         return nftVotes[_nftAddress][tokenid][msg.sender].appraisal;
     }
     

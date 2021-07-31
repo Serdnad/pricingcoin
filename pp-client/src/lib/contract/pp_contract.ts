@@ -1,7 +1,7 @@
 import Session from "$lib/models/session"
 import { BigNumber, ethers } from "ethers"
 
-const CONTRACT_ADDRESS = "0x9cC91a88707285af82326292B4EE74267CCa6D6B"
+const CONTRACT_ADDRESS = "0x4fd04a0d04d19944e6f2F91420ef944ddC28E4c6"
 import CONTRACT_ABI from "./pp_contract_abi.json"
 
 export module PpContract {
@@ -100,7 +100,35 @@ export module PpContract {
                 const session = new Session(
                     nft.nftAddress,
                     nft.tokenid,
-                    sessionData[0],
+                    sessionData[0].mul(1000),
+                    sessionData[1],
+                    sessionData[2],
+                    sessionData[3],
+                )
+
+                sessions.push(session)
+            } catch (e) {
+                break
+            }
+        }
+
+        return sessions
+    }
+
+    export async function getMyPricingSessions(): Promise<Session[]> {
+        if (contract == null) await initialize()
+
+        let sessions: Session[] = []
+
+        for (let i = 0; i < Number.MAX_SAFE_INTEGER; i++) {
+            try {
+                const nft = await contract.userSessionsParticipated(currentAccount, i)
+                const sessionData = await contract.getSession(nft.nftAddress, nft.tokenid)
+
+                const session = new Session(
+                    nft.nftAddress,
+                    nft.tokenid,
+                    sessionData[0].mul(1000),
                     sessionData[1],
                     sessionData[2],
                     sessionData[3],
@@ -173,7 +201,8 @@ export module PpContract {
 
     export async function getTotalSessionStake(address: string, tokenid: ethers.BigNumberish): Promise<ethers.BigNumber> {
         if (contract == null) await initialize()
-        return contract.getTotalSessionStake(address, tokenid)
+        const sessionData = await contract.getSession(address, tokenid)
+        return sessionData[2]
     }
 
     export async function getFinalAppraisal(address: string, tokenid: ethers.BigNumberish): Promise<ethers.BigNumber> {
