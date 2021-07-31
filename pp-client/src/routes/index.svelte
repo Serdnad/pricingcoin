@@ -1,4 +1,18 @@
 <script lang="ts">
+    import PpContract from "$lib/contract/pp_contract"
+    import { onMount } from "svelte"
+
+    let earned: string = "."
+    let priced: string = "."
+    let issued: string = "."
+
+    onMount(() => {
+        // Note: using callbacks instead of await allows all of these fetches to be done concurrently
+        PpContract.getProfitGenerated().then((num) => (earned = num.toString()))
+        PpContract.getTotalCoinsIssued().then((num) => (priced = num.toString()))
+        PpContract.getTotalCoinsIssued().then((num) => (issued = num.toString()))
+    })
+
     function launchApp() {
         location.href = "/sessions"
     }
@@ -34,7 +48,7 @@
             <button class="special" on:click={launchApp}>Launch App</button>
 
             <div class="text-block">
-                <p>100.3 ETH</p>
+                <p>{earned} ETH</p>
                 <p>Earned</p>
             </div>
         </div>
@@ -43,7 +57,7 @@
             <button on:click={openWhitePaper}>White-paper</button>
 
             <div class="text-block">
-                <p>131</p>
+                <p>{priced}</p>
                 <p>NFTs Priced</p>
             </div>
         </div>
@@ -52,15 +66,13 @@
             <button on:click={openGithub}>Github</button>
 
             <div class="text-block">
-                <p>50M PP</p>
-                <p>Earned</p>
+                <p>{issued} PP</p>
+                <p>Issued</p>
             </div>
         </div>
     </div>
 
     <div class="socials">
-        <!-- TODO (Alan): The images you had on Figma were fugged,
-			but should be able to just replace them in static folder -->
         <img on:click={openTwitter} src="twitter.svg" />
         <img on:click={openDiscord} src="discord.svg" />
     </div>

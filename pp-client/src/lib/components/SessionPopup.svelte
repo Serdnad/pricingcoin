@@ -1,13 +1,14 @@
 <script lang="ts">
-    import type Session from "$lib/models/session"
+    import { session } from "$app/stores"
 
+    import PpContract from "$lib/contract/pp_contract"
+    import { selectedSession } from "$lib/stores/session"
     import { onMount } from "svelte"
     import Button from "./common/Button.svelte"
     import TextInput from "./common/TextInput.svelte"
 
     // Note: this might be better as a dispatch
     export let onExit: () => {}
-    export let session: Session
     export let isMyOwn: boolean = false
 
     let isActive: boolean
@@ -15,10 +16,27 @@
     let appraisalPrice
     let stakeAmount
 
-    onMount(() => {
-        // TODO (Alan): Confirm this is how active is determined, or update otherwise
-        isActive = Number.parseInt(session.end) - Date.now() > 0
+    let stake
+    let appraisal
+    let participants
+    let sessionStake
+    let finalAppraisal
+
+    onMount(async () => {
+        isActive = Date.now() * 3600 * 24 * 7 > $selectedSession.end.valueOf()
+
+        stake = await PpContract.getStake($selectedSession.contract, $selectedSession.tokenid)
+        participants = $selectedSession.participants
+        appraisal = participants
+        sessionStake = await PpContract.getTotalSessionStake($selectedSession.contract, $selectedSession.tokenid)
+        finalAppraisal = await PpContract.getFinalAppraisal($selectedSession.contract, $selectedSession.tokenid)
+
+        console.log(stake, appraisal, participants, sessionStake, finalAppraisal)
     })
+
+    async function setVote() {
+        PpContract.setVote(appraisalPrice, stakeAmount, $selectedSession.contract, $selectedSession.tokenid)
+    }
 </script>
 
 <div class="shadow">
@@ -27,13 +45,12 @@
 
         {#if isActive || isMyOwn}
             <div class="top-left-panel">
-                <!-- TODO (Alan): Fill in values -->
-                <p>Session Stake:</p>
-                <p>Participants:</p>
+                <p>Stake: {stake}</p>
+                <p>Participants: {participants}</p>
                 {#if isMyOwn}
-                    <p>Stake: </p>
-                    <p>Appraisal:</p>
-                    <p>Final Appraisal:</p>
+                    <p>Session Stake: {sessionStake}</p>
+                    <p>Appraisal: {appraisal}</p>
+                    <p>Final Appraisal: {finalAppraisal}</p>
                 {/if}
             </div>
         {/if}
@@ -47,27 +64,42 @@
                 <p>Status: CalcBase</p>
                 <div class="row">
                     <!-- TODO (Alan): Make these do something, I'd think -->
-                    <button>Weight</button>
-                    <button>SetFinal</button>
-                    <button>CalcBase</button>
-                    <button>IssueCoin</button>
-                    <button>Harvest</button>
+                    <button on:click={() => PpContract.weightVote($selectedSession.contract, $selectedSession.tokenid)}>
+                        Weight
+                    </button>
+                    <button
+                        on:click={() =>
+                            PpContract.setFinalAppraisal($selectedSession.contract, $selectedSession.tokenid)}
+                    >
+                        SetFinal
+                    </button>
+                    <button
+                        on:click={() => PpContract.calculateBase($selectedSession.contract, $selectedSession.tokenid)}
+                    >
+                        CalcBase
+                    </button>
+                    <button on:click={() => PpContract.issueCoins($selectedSession.contract, $selectedSession.tokenid)}>
+                        IssueCoin
+                    </button>
+                    <button
+                        on:click={() => PpContract.harvestLoss($selectedSession.contract, $selectedSession.tokenid)}
+                    >
+                        Harvest
+                    </button>
                 </div>
             {:else if isActive}
-                <!-- TODO (Alan): Make this do something else, probably -->
                 <div class="row">
                     <TextInput placeholder="Appraisal Price" bind:value={appraisalPrice} />
                     &nbsp;&nbsp; <!-- little hacky but it works -->
                     <TextInput placeholder="Stake Amount" bind:value={stakeAmount} />
-                    <Button text="Submit" on:click={() => alert(`staked ${stakeAmount} @ ${appraisalPrice}`)} />
+                    <Button text="Submit" on:click={setVote} />
                 </div>
             {:else}
                 <div class="row">
-                    <!-- TODO (Alan): Make these say something useful (?) -->
-                    <p>Final Appraisal: #</p>
-                    <p>$PP Issued: #</p>
-                    <p>Profits Distributed: #</p>
-                    <p>Total Votes: #</p>
+                    <p>Final Appraisal: {finalAppraisal}</p>
+                    <!-- <p>$PP Issued: #</p> -->
+                    <!-- <p>Profits Distributed: #</p> -->
+                    <p>Total Votes: {$selectedSession.participants}</p>
                 </div>
             {/if}
         </div>
