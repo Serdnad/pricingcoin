@@ -29,15 +29,17 @@ contract PpContract is ERC20 {
     uint profitGenerated;
     //tracks total amount of coins generated during life of protocol
     uint totalCoinsIssued;
-    //
+    //tracks total amount of nfts that have been priced
     uint public nftsPriced;
     //tracks the current nonce (i.e. number lossPoolDistribution session)
     uint nonce;
+    //keeps lifetime list of all nfts that have gone through PP
+    NftInformation[] public listOfNfts;
 
     
     // ============ Mappings ============
-    //Mapping used to track how many voters have voted on a particular NFT
-    mapping(address => mapping(uint => address[])) addressesPerNft;
+    //Check NftExistence so listOfNfts list doesn't grow arbitrarily large with repeat sessions
+    mapping(address => mapping(uint => bool)) checkNftExistence;
     //Easily accesible pricing session lookup 
     mapping(address => mapping(uint => PricingSession)) AllPricingSessions;
     //Allows pricing protocol to handle multiple NFTs at once by allowing lookup and tracking of different NFTs
@@ -48,9 +50,9 @@ contract PpContract is ERC20 {
     mapping(uint => mapping(address => bool)) lossPoolAccessCheck;
     //Used to track start time of distribution session 
     mapping(uint => uint) lPDSstartTime;
-    //
+    //Maps nonce to distributeSession struct which holds PpToClaim, PoolSize, active
     mapping(uint => DistributeSession) lossPoolDistributionSession;
-    //
+    //Keeps track of each users coin balance with intermediary nonce mapping to stop double spend
     mapping(uint => mapping(address => uint)) public coinBalance;
     
     // ============ Structs ============
@@ -109,12 +111,14 @@ contract PpContract is ERC20 {
         bool lossHarvested;
     }
 
+    //Used for distribution session metrics
     struct DistributeSession {
         uint poolSize; 
         uint PpToClaim;
         bool active;
     }
 
+    //Stored for each NFT that comes through PP
     struct NftInformation {
         address nftAddress;
         uint tokenid;
@@ -146,8 +150,7 @@ contract PpContract is ERC20 {
     
     //Enforce session buffer to stop sessions from getting overwritten
     modifier stopOverwrite(address _nftAddress, uint tokenid) {
-        require(AllPricingSessions[_nftAddress][tokenid].active = false 
-            && block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 10 days, "W8D");
+        require(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 10 days, "W8D");
         _;
     }
     
@@ -217,7 +220,11 @@ contract PpContract is ERC20 {
         AllPricingSessions[_nftAddress][tokenid].lowestStake = 10000000 ether;
         //Switch pricing session to active 
         AllPricingSessions[_nftAddress][tokenid].active = true;
-        //Add new NFT address to list of addresses 
+        //Add new NFT address to list of addresses
+        if (checkNftExistence[_nftAddress][tokenid] == false) {
+            listOfNfts.push(NftInformation(_nftAddress, tokenid));
+            checkNftExistence[_nftAddress][tokenid] = true;
+        }
         emit sessionCreated(block.timestamp, block.timestamp + 1 days, _nftAddress, tokenid);
     }
     
@@ -227,17 +234,19 @@ contract PpContract is ERC20 {
     function setVote(uint _appraisal, address _nftAddress, uint tokenid) checkStake isActive(_nftAddress, tokenid) oneVoteEach(_nftAddress, tokenid) payable public {
         //Create a new Voter instance
         Voter memory newVote = Voter(0, _appraisal, msg.value, true);
+        //Constantly check for new lowest stake
         if (msg.value < AllPricingSessions[_nftAddress][tokenid].lowestStake) {
             AllPricingSessions[_nftAddress][tokenid].lowestStake = msg.value;
         }
         //Add to total appraisal value for final appraisal calculation
         AllPricingSessions[_nftAddress][tokenid].totalAppraisalValue += _appraisal;
+        //Add to total amount of votes (pre-weighting) 
         AllPricingSessions[_nftAddress][tokenid].totalVotes ++;
         //Add to total session stake to for reward purposes later on in issueCoin equation
         AllPricingSessions[_nftAddress][tokenid].totalSessionStake += msg.value;
         //Attach new msg.sender address to newVote (i.e. new Voter struct)
         nftVotes[_nftAddress][tokenid][msg.sender] = newVote;
-        //Add voter to addressesPerNft for tracking unique voters
+        //Add to voter count 
         AllPricingSessions[_nftAddress][tokenid].uniqueVoters ++; 
         //Update sessions participated for user look up ability
         userSessionsParticipated[msg.sender].push(NftInformation(_nftAddress, tokenid));
@@ -249,6 +258,7 @@ contract PpContract is ERC20 {
     and the rest of the votes are weighted as a multiple of that. Eq --> sqrt(stake/lowestStake)
     */
     function weightVote(address _nftAddress, uint tokenid) votingSessionComplete(_nftAddress, tokenid) public {
+        //If user calls weightVote late, they end the session
         if(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 1 days) {
             AllPricingSessions[_nftAddress][tokenid].votesWeighted = true;
         }
@@ -261,7 +271,8 @@ contract PpContract is ERC20 {
         AllPricingSessions[_nftAddress][tokenid].totalAppraisalValue += (weight-1) * nftVotes[_nftAddress][tokenid][msg.sender].appraisal;
         //Track to end session
         AllPricingSessions[_nftAddress][tokenid].amountVotesWeighted ++;
-        if (AllPricingSessions[_nftAddress][tokenid].amountVotesWeighted == addressesPerNft[_nftAddress][tokenid].length){
+        //If votes weighted is same amount as unique voters that means all participants have weighted their votes and session can move on
+        if (AllPricingSessions[_nftAddress][tokenid].amountVotesWeighted == AllPricingSessions[_nftAddress][tokenid].uniqueVoters){
             AllPricingSessions[_nftAddress][tokenid].votesWeighted = true;
         }
         else {
@@ -278,6 +289,7 @@ contract PpContract is ERC20 {
         //If a session is larger than 25 people, the user that triggers the final Appraisal is awarded 2 * fourth-rt(session size) tokens.
         uint amount = sqrtLibrary.appraisalReward(AllPricingSessions[_nftAddress][tokenid].uniqueVoters);
         _mint(payable(msg.sender), amount);
+        //If claim session is currently active, new coin is counted in towards next claim session
         if(lossPoolDistributionSession[nonce].active = true) {
                 coinBalance[nonce + 1][msg.sender] += amount;
             }
@@ -316,6 +328,7 @@ contract PpContract is ERC20 {
     function calculateBase(address _nftAddress, uint tokenid) finalAppraisalComplete(_nftAddress, tokenid) public {
         //Set consequence for users that don't calculate their base before the window closes
         nftVotes[_nftAddress][tokenid][msg.sender].base = 0;
+        //Check that baseCalculated hasn't already been completed and its not past the 2 day post endtime window to calculate base
         require(AllPricingSessions[_nftAddress][tokenid].baseCalculated == false &&
             !(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 2 days));
         /*
@@ -344,15 +357,17 @@ contract PpContract is ERC20 {
             block.timestamp < AllPricingSessions[_nftAddress][tokenid].endTime + 4 days);
         uint amount; 
         
+        //Issues coins based on equation above (implemented in calcIssue) used here
         amount = IssueCoinComp.calcIssue(
             nftVotes[_nftAddress][tokenid][msg.sender].base, 
             nftVotes[_nftAddress][tokenid][msg.sender].stake, 
-            addressesPerNft[_nftAddress][tokenid].length, 
+            AllPricingSessions[_nftAddress][tokenid].uniqueVoters, 
             AllPricingSessions[_nftAddress][tokenid].totalSessionStake
             );
 
         //Mints the coins based on earned tokens and sends them to user at address a
         _mint(msg.sender, amount);
+        //Again, check if claim session is currently active before choosing which session it'll be added to
         if(lossPoolDistributionSession[nonce].active = true) {
                 coinBalance[nonce + 1][msg.sender] += amount;
             }
@@ -365,7 +380,8 @@ contract PpContract is ERC20 {
         AllPricingSessions[_nftAddress][tokenid].tokensIssued += amount;
         AllPricingSessions[_nftAddress][tokenid].coinIssueEvents++;
         
-        if (AllPricingSessions[_nftAddress][tokenid].coinIssueEvents == addressesPerNft[_nftAddress][tokenid].length){
+        //Check to see if issuance events = unique voters because that implies everyone in session received tokens and can now move on
+        if (AllPricingSessions[_nftAddress][tokenid].coinIssueEvents == AllPricingSessions[_nftAddress][tokenid].uniqueVoters){
             AllPricingSessions[_nftAddress][tokenid].coinsIssued = true;
         }
         else {
@@ -389,13 +405,15 @@ contract PpContract is ERC20 {
        Checks users that are out of the money for how far over (in first if statement) 
        or under (in else if) they are and adjusts their stake balance accordingly
        */
+
+       //harvest loss eq implemented in harvestLossLibrary (according to above description) and used here
         uint amountHarvested;
         amountHarvested = harvestLossLibrary.harvest( 
             nftVotes[_nftAddress][tokenid][msg.sender].stake, 
             nftVotes[_nftAddress][tokenid][msg.sender].appraisal,
             AllPricingSessions[_nftAddress][tokenid].finalAppraisal
             );
-                
+            
             AllPricingSessions[_nftAddress][tokenid].lossPoolTotal += amountHarvested;
             nftVotes[_nftAddress][tokenid][msg.sender].stake -= amountHarvested;
             if(lossPoolDistributionSession[nonce].active = true) {
@@ -406,37 +424,24 @@ contract PpContract is ERC20 {
             }
         profitGenerated += amountHarvested;
             
-            //Send stake back and emit event confirming
+        //Send stake back and emit event confirming
         payable(msg.sender).transfer(nftVotes[_nftAddress][tokenid][msg.sender].stake);
         nftVotes[_nftAddress][tokenid][msg.sender].stake = 0;
         emit stakeRefunded(nftVotes[_nftAddress][tokenid][msg.sender].stake, msg.sender); 
 
         AllPricingSessions[_nftAddress][tokenid].lossHarvestEvents++;
         
-        if (AllPricingSessions[_nftAddress][tokenid].lossHarvestEvents == addressesPerNft[_nftAddress][tokenid].length){
+        if (AllPricingSessions[_nftAddress][tokenid].lossHarvestEvents == AllPricingSessions[_nftAddress][tokenid].uniqueVoters){
             AllPricingSessions[_nftAddress][tokenid].lossHarvested = true;
         }
         else {
             AllPricingSessions[_nftAddress][tokenid].lossHarvested = false;
         }
-    } 
-    
-    function endSession(address _nftAddress, uint tokenid) checkSessionActive(_nftAddress, tokenid) public {
-        require(block.timestamp > AllPricingSessions[_nftAddress][tokenid].endTime + 6 days);
-        uint amount = sqrtLibrary.appraisalReward(addressesPerNft[_nftAddress][tokenid].length);
-        _mint(payable(msg.sender), amount);
-        if(lossPoolDistributionSession[nonce].active = true) {
-                coinBalance[nonce + 1][msg.sender] += amount;
-            }
-        else {
-                coinBalance[nonce][msg.sender] += amount;
-            }
-
-        totalCoinsIssued += amount;
-        AllPricingSessions[_nftAddress][tokenid].tokensIssued += amount;
-        AllPricingSessions[_nftAddress][tokenid].active = false;
     }
 
+    /*
+    Overriding normal ERC20 transfer to implement nonce usage which is used to stop double spending
+    */
     function transfer(address recipient, uint amount) override public returns(bool) {
         transfer(recipient, amount);
         if(lossPoolDistributionSession[nonce].active = true) {
@@ -456,12 +461,8 @@ contract PpContract is ERC20 {
     Loss pool should be divided by the amount of tokens in circulation and
     distributed to each coin holder wallet. For example if loss pool held 10 
     eth and there were 10 coins in circulation each coin would recieve 0.1 eth.
-    
-    Should return true if loss pool is completely distributed.
-    
-    balancOf(a) represents the user (address a) balance of $PP.
-    _amount represents the calculate amount of ETH per token that is to be distributed.
-    Function should return true if eth is successfully sent. 
+
+    Claim session opens up once every 30 days for 2 days 
     */
     function distributeLossPool() public returns(bool){
         //Make sure the msg.sender hasn't drawn from this session yet, its 30 days after last session, session still has ETH
@@ -476,6 +477,7 @@ contract PpContract is ERC20 {
         //Adjust lossPool balance to reflect ^^ transaction
         lossPoolDistributionSession[nonce].poolSize -= transferAmount;
         lossPoolDistributionSession[nonce].PpToClaim -= coinBalance[nonce][msg.sender];
+        //Add coinBalance at current nonce to coinBalance of next nonce once user claims reward 
         coinBalance[nonce + 1][msg.sender] += coinBalance[nonce][msg.sender];
         coinBalance[nonce][msg.sender] = 0;
         emit lossPoolDistributed(transferAmount, msg.sender);
