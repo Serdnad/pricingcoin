@@ -1,6 +1,25 @@
-<script>
+<script lang="ts">
     import NavBar from "$lib/components/common/NavBar.svelte"
-    import PpContract from "$lib/contract/pp_contract";
+    import PpContract from "$lib/contract/pp_contract"
+    import type { ethers } from "ethers"
+    import { onMount } from "svelte"
+
+    let poolSize: string
+    let active: boolean
+    let timeLeft: ethers.BigNumberish
+    let coinBalance: string
+    let claimSize: string
+
+    onMount(() => {
+        // Note: using callbacks instead of await allows all of these fetches to be done concurrently
+        PpContract.getLossPoolRemainder().then((num) => (poolSize = num.toString()))
+        PpContract.balanceOfSelf().then((num) => (coinBalance = num.toString()))
+        PpContract.getClaimSize().then((num) => (claimSize = num.toString()))
+        PpContract.getTimeLeft().then((num) => {
+            timeLeft = num
+            active = timeLeft.toNumber() == 0
+        })
+    })
 
     function claimPool() {
         PpContract.distributeLossPool()
@@ -14,11 +33,11 @@
     <div class="container">
         <!-- TODO (Alan): Substitute placeholders -->
         <!-- TODO: Include images -->
-        <p>Pool Size: 100.3 ETH</p>
-        <p>Active: No</p>
-        <p>Time Left: 13 days</p>
-        <p>Coin Balance: 10k $PP</p>
-        <p>Claim Size: 0.02 ETH</p>
+        <p>Pool Size: {poolSize} ETH</p>
+        <p>Active: {active ? "Yes" : "No"}</p>
+        <p>Time Left: {timeLeft}s</p>
+        <p>Coin Balance: {coinBalance} $PP</p>
+        <p>Claim Size: {claimSize} ETH</p>
 
         <div class="button-container">
             <button on:click={claimPool}>Claim</button>

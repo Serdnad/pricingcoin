@@ -1,22 +1,22 @@
 <script lang="ts">
-    import { session } from "$app/stores"
-import type Session from "$lib/models/session"
+    import type Session from "$lib/models/session"
+    import { selectedSession } from "$lib/stores/session"
     import SessionPopup from "./SessionPopup.svelte"
 
     export let sessions: Session[]
     export let isMySessions: boolean = false
 
     let isPopupVisible: boolean = false
-    let selectedSession: Session | undefined
+    // let selectedSession: Session | undefined
 
     function showPopup(session: Session) {
-        selectedSession = session
+        selectedSession.set(session)
         isPopupVisible = true
     }
 </script>
 
 {#if isPopupVisible}
-    <SessionPopup isMyOwn={isMySessions} session={selectedSession} onExit={() => (isPopupVisible = false)} />
+    <SessionPopup isMyOwn={isMySessions} onExit={() => (isPopupVisible = false)} />
     <!-- <div class="popup">ASD</div> -->
 {/if}
 
@@ -41,7 +41,7 @@ import type Session from "$lib/models/session"
                 <td>{index + 1}</td>
                 <td>{session.contract}</td>
                 <td>{session.tokenid}</td>
-                <td>{session.end}</td>
+                <td>{session.end.toLocaleString()}</td>
                 {#if isMySessions}
                     <td>{session.status}</td>
                 {/if}

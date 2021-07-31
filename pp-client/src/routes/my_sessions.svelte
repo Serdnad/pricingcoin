@@ -4,10 +4,14 @@
     import SessionsTable from "$lib/components/SessionsTable.svelte"
     import TextInput from "$lib/components/common/TextInput.svelte"
     import Session from "$lib/models/session"
+    import { onMount } from "svelte"
+    import PpContract from "$lib/contract/pp_contract"
 
-    // TODO (Alan): Load sessions from wherever
-    let tmp = new Session("0x28990a298acd67cfe133ef37758930ce92adbf64", 123412, Date.now() + "", 1000, "Voting", "200.5")
-    let sessions = [tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp, tmp]
+    let sessions: Session[] = []
+
+    onMount(async () => {
+        sessions = await PpContract.getPricingSessions()
+    })
 </script>
 
 <NavBar />

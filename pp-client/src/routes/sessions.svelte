@@ -1,22 +1,38 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount } from "svelte"
     import Button from "$lib/components/common/Button.svelte"
     import NavBar from "$lib/components/common/NavBar.svelte"
     import SessionsTable from "$lib/components/SessionsTable.svelte"
     import TextInput from "$lib/components/common/TextInput.svelte"
-    import CurrencyIcon from "$lib/components/common/CurrencyIcon.svelte"
-    import PpContract from "$lib/contract/pp_contract";
+    import PpContract from "$lib/contract/pp_contract"
     import type Session from "$lib/models/session"
 
     let sessions: Session[] = []
 
-    onMount(async () => {
-        // TODO: Delete me
-        let exampleValue = await PpContract.retrieve()
-        console.log(exampleValue)
+    let poolSize: string
+    let active: boolean
+    let timeLeft: ethers.BigNumberish
 
-        sessions = await PpContract.getSessions()
+    let newSessionAddress
+    let newSessionTokenId
+
+    onMount(async () => {
+        sessions = await PpContract.getPricingSessions()
+
+        PpContract.getLossPoolRemainder().then((num) => (poolSize = num.toString()))
+        PpContract.getTimeLeft().then((num) => {
+            timeLeft = num
+            active = timeLeft.toNumber() == 0
+        })
     })
+
+    async function createSession() {
+        PpContract.createPricingSession(newSessionAddress, newSessionTokenId)
+    }
+
+    async function findActiveSession() {}
+
+    async function findPastSession() {}
 </script>
 
 <NavBar />
@@ -25,9 +41,9 @@
     <div>
         <div class="status-card">
             <p class="header">Claim Pool Status:</p>
-            <p>Size: 100.3 ETH</p>
-            <p>Active: No</p>
-            <p>Time Left: 13 days</p>
+            <p>Size: {poolSize} ETH</p>
+            <p>Active: {active ? "Yes" : "No"}</p>
+            <p>Time Left: {timeLeft}s</p>
         </div>
 
         <h4>Active Sessions Leaderboard</h4>
@@ -38,11 +54,11 @@
             <div>
                 <p>Create New Session</p>
                 <div>
-                    <TextInput placeholder="NFT contract address here" />
+                    <TextInput placeholder="NFT contract address here" bind:value={newSessionAddress} />
                     <br />
-                    <TextInput placeholder="NFT token ID here" />
+                    <TextInput placeholder="NFT token ID here" bind:value={newSessionTokenId} />
                     <br />
-                    <Button text={"Submit"} />
+                    <Button text={"Submit"} on:click={createSession} />
                 </div>
             </div>
 
