@@ -17,8 +17,8 @@
     }
 
     function copyId(session: Session) {
-        alert("Copied ID to clipboard.")
         navigator.clipboard.writeText(session.tokenid)
+        alert("Copied ID to clipboard.")
     }
 </script>
 
