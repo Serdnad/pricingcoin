@@ -30,7 +30,6 @@ export module Erc721Contract {
         return contract.tokenURI(tokenId, { gasLimit: 2000000 }).then(async (metadataUri) => {
             return (await fetch(metadataUri)).json()
         }).catch(() => {
-            console.log("ERER")
             return {
                 name: "Unknown",
                 description: "Doesn't comply with ERC721 standard, view on Etherscan",

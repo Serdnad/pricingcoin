@@ -15,6 +15,11 @@
         selectedSession.set(session)
         isPopupVisible = true
     }
+
+    function copyId(session: Session) {
+        alert("Copied ID to clipboard.")
+        navigator.clipboard.writeText(session.tokenid)
+    }
 </script>
 
 {#if isPopupVisible}
@@ -41,7 +46,7 @@
             <tr>
                 <td>{index + 1}</td>
                 <td>{session.contract}</td>
-                <td>{shortenId(session.tokenid)}</td>
+                <td on:click={() => copyId(session)}>{shortenId(session.tokenid)}</td>
                 <td>{session.end.toLocaleString()}</td>
                 {#if isMySessions}
                     <td>{session.status}</td>
