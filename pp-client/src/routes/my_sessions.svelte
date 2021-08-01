@@ -42,6 +42,7 @@
     <h4>My Pricing Sessions</h4>
     <SessionsTable {sessions} isMySessions={true} />
 
+    <br />
     <SessionSearch
         label={"Know NFT address? Find it faster by\npasting contract address below!"}
         onSubmit={findSession}
@@ -53,6 +54,7 @@
         display: flex;
         flex-direction: column;
         align-items: center;
+        justify-content: center;
 
         margin-top: 16px;
     }

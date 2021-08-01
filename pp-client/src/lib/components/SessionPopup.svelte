@@ -194,13 +194,19 @@
         align-items: center;
         height: 100%;
 
+        h4,
+        p {
+            margin: 0;
+        }
+
         div {
             padding: 32px;
         }
 
         img {
-            max-width: 55%;
-            max-height: 55%;
+            margin-top: 16px;
+            max-width: 50%;
+            max-height: 50%;
         }
     }
 

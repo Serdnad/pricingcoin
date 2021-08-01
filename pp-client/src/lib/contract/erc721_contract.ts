@@ -22,22 +22,21 @@ export module Erc721Contract {
         provider = new ethers.providers.Web3Provider(window.ethereum)
     }
 
-    export async function getInfo(address: string, tokenId: string) {
+    export async function getInfo(address: string, tokenId: string): Promise<any> {
         if (provider == null) await initialize()
 
         const contract = new ethers.Contract(address, CONTRACT_ABI, provider)
-        const name = await contract.name()
-        console.log(name)
 
-        try {
-            const metadataUri = await contract.tokenURI(tokenId, { gasLimit: 2000000 })
-            const metadata = await (await fetch(metadataUri)).json()
-
-            console.log()
-            return metadata
-        } catch (e) {
-            console.error(e)
-        }
+        return contract.tokenURI(tokenId, { gasLimit: 2000000 }).then(async (metadataUri) => {
+            return (await fetch(metadataUri)).json()
+        }).catch(() => {
+            console.log("ERER")
+            return {
+                name: "Unknown",
+                description: "Doesn't comply with ERC721 standard, view on Etherscan",
+                image: "/pplogo.png"
+            }
+        })
     }
 }
 

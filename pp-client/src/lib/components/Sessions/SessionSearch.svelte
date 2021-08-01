@@ -16,7 +16,7 @@
 
 <div>
     <p>{label}</p>
-    <div>
+    <div class="form">
         <TextInput placeholder="NFT contract address" bind:value={address} />
         <br />
         <TextInput placeholder="NFT token ID" bind:value={tokenId} />
@@ -31,5 +31,12 @@
         margin: 0;
         margin-bottom: 8px;
         text-align: center;
+
+        white-space: pre-line;
+    }
+
+    .form {
+        margin: auto;
+        width: fit-content;
     }
 </style>
