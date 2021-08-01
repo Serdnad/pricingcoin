@@ -6,42 +6,72 @@
     import TextInput from "$lib/components/common/TextInput.svelte"
     import PpContract from "$lib/contract/pp_contract"
     import type Session from "$lib/models/session"
+    import { BigNumber, ethers, utils } from "ethers"
+    import SessionSearch from "$lib/components/Sessions/SessionSearch.svelte"
+    import SessionPopup from "$lib/components/SessionPopup.svelte"
+    import { selectedSession } from "$lib/stores/session"
 
     let sessions: Session[] = []
+    let isPopupVisible: boolean = false
 
-    let poolSize: string
+    let poolSize = BigNumber.from(0)
     let active: boolean
     let timeLeft: ethers.BigNumberish
-
-    let newSessionAddress
-    let newSessionTokenId
 
     onMount(async () => {
         sessions = await PpContract.getPricingSessions()
 
-        PpContract.getLossPoolRemainder().then((num) => (poolSize = num.toString()))
+        PpContract.getLossPoolRemainder().then((num) => (poolSize = num))
         PpContract.getTimeLeft().then((num) => {
             timeLeft = num
             active = timeLeft.toNumber() == 0
         })
     })
 
-    async function createSession() {
-        PpContract.createPricingSession(newSessionAddress, newSessionTokenId)
+    async function createSession(contractAddress: string, tokenId: string) {
+        PpContract.createPricingSession(contractAddress, tokenId)
     }
 
-    async function findActiveSession() {}
+    async function findActiveSession(contractAddress: string, tokenId: string) {
+        const session = sessions.filter((session) => {
+            return session.contract == contractAddress && session.tokenid.toString() == tokenId && session.isActive()
+        })[0]
 
-    async function findPastSession() {}
+        if (session == null) {
+            alert("Could not find active session")
+            return
+        }
+
+        selectedSession.set(session)
+        isPopupVisible = true
+    }
+
+    async function findPastSession(contractAddress: string, tokenId: string) {
+        const session = sessions.filter((session) => {
+            return session.contract == contractAddress && session.tokenid.toString() == tokenId && !session.isActive()
+        })[0]
+
+        if (session == null) {
+            alert("Could not find past session")
+            return
+        }
+
+        selectedSession.set(session)
+        isPopupVisible = true
+    }
 </script>
 
 <NavBar />
+
+{#if isPopupVisible}
+    <SessionPopup onExit={() => (isPopupVisible = false)} />
+{/if}
 
 <div class="container">
     <div>
         <div class="status-card">
             <p class="header">Claim Pool Status:</p>
-            <p>Size: {poolSize} ETH</p>
+            <p>Size: {ethers.utils.formatEther(poolSize)} ETH</p>
             <p>Active: {active ? "Yes" : "No"}</p>
             <p>Time Left: {timeLeft}s</p>
         </div>
@@ -50,39 +80,11 @@
         <SessionsTable {sessions} />
 
         <div class="input-row">
-            <!-- Note: when you hook these up, it may be most convenient to create a component -->
-            <div>
-                <p>Create New Session</p>
-                <div>
-                    <TextInput placeholder="NFT contract address here" bind:value={newSessionAddress} />
-                    <br />
-                    <TextInput placeholder="NFT token ID here" bind:value={newSessionTokenId} />
-                    <br />
-                    <Button text={"Submit"} on:click={createSession} />
-                </div>
-            </div>
+            <SessionSearch label={"Create New Session"} onSubmit={createSession} />
 
-            <div>
-                <p>Find Active Session</p>
-                <div>
-                    <TextInput placeholder="NFT contract address here" />
-                    <br />
-                    <TextInput placeholder="NFT token ID here" />
-                    <br />
-                    <Button text={"Submit"} />
-                </div>
-            </div>
+            <SessionSearch label={"Find Active Sessions"} onSubmit={findActiveSession} />
 
-            <div>
-                <p>Find Past Sessions</p>
-                <div>
-                    <TextInput placeholder="NFT contract address here" />
-                    <br />
-                    <TextInput placeholder="NFT token ID here" />
-                    <br />
-                    <Button text={"Submit"} />
-                </div>
-            </div>
+            <SessionSearch label={"Find Past Sessions"} onSubmit={findPastSession} />
         </div>
     </div>
 </div>
@@ -127,10 +129,5 @@
         display: flex;
         justify-content: space-around;
         margin-top: 16px;
-
-        p {
-            margin: 0;
-            text-align: center;
-        }
     }
 </style>

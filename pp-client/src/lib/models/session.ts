@@ -20,6 +20,10 @@ class Session {
         this.totalStake = totalStake.toString()
         this.status = SessionStatus[status.toNumber() - 1]
     }
+
+    public isActive(): boolean {
+        return Date.now() * 3600 * 24 * 7 > this.end.valueOf()
+    }
 }
 
 export default Session

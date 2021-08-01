@@ -6,28 +6,46 @@
     import type Session from "$lib/models/session"
     import { onMount } from "svelte"
     import PpContract from "$lib/contract/pp_contract"
+    import SessionPopup from "$lib/components/SessionPopup.svelte"
+    import { selectedSession } from "$lib/stores/session"
+    import SessionSearch from "$lib/components/Sessions/SessionSearch.svelte"
 
     let sessions: Session[] = []
+    let isPopupVisible: boolean = false
 
     onMount(async () => {
         sessions = await PpContract.getMyPricingSessions()
     })
+
+    async function findSession(contractAddress: string, tokenId: string) {
+        const session = sessions.filter((session) => {
+            return session.contract == contractAddress && session.tokenid.toString() == tokenId
+        })[0]
+
+        if (session == null) {
+            alert("Could not find session")
+            return
+        }
+
+        selectedSession.set(session)
+        isPopupVisible = true
+    }
 </script>
 
 <NavBar />
 
+{#if isPopupVisible}
+    <SessionPopup onExit={() => (isPopupVisible = false)} />
+{/if}
+
 <div class="container">
     <h4>My Pricing Sessions</h4>
-    <SessionsTable {sessions} isMySessions="true" />
+    <SessionsTable {sessions} isMySessions={true} />
 
-    <p>Know NFT address? Find it faster by<br />pasting contract address below!</p>
-    <div class="input-group">
-        <TextInput placeholder="NFT contract address here" />
-        <br />
-        <TextInput placeholder="NFT token ID here" />
-        <br />
-        <Button text={"Submit"} />
-    </div>
+    <SessionSearch
+        label={"Know NFT address? Find it faster by\npasting contract address below!"}
+        onSubmit={findSession}
+    />
 </div>
 
 <style lang="scss">

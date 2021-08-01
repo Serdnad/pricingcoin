@@ -1,6 +1,8 @@
 <script lang="ts">
     import type Session from "$lib/models/session"
     import { selectedSession } from "$lib/stores/session"
+    import { shortenId } from "$lib/util"
+    import { ethers, utils } from "ethers"
     import SessionPopup from "./SessionPopup.svelte"
 
     export let sessions: Session[]
@@ -17,7 +19,6 @@
 
 {#if isPopupVisible}
     <SessionPopup isMyOwn={isMySessions} onExit={() => (isPopupVisible = false)} />
-    <!-- <div class="popup">ASD</div> -->
 {/if}
 
 <table>
@@ -40,13 +41,13 @@
             <tr>
                 <td>{index + 1}</td>
                 <td>{session.contract}</td>
-                <td>{session.tokenid}</td>
+                <td>{shortenId(session.tokenid)}</td>
                 <td>{session.end.toLocaleString()}</td>
                 {#if isMySessions}
                     <td>{session.status}</td>
                 {/if}
                 <td>{session.participants}</td>
-                <td>{session.totalStake}</td>
+                <td>{ethers.utils.formatEther(session.totalStake)}</td>
                 <td
                     ><button on:click={() => showPopup(session)}>{isMySessions ? "Next Steps" : "Price Now!"}</button
                     ></td

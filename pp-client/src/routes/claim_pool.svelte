@@ -1,20 +1,21 @@
 <script lang="ts">
     import NavBar from "$lib/components/common/NavBar.svelte"
     import PpContract from "$lib/contract/pp_contract"
-    import type { ethers } from "ethers"
+    import { formatEther } from "@ethersproject/units"
+    import { BigNumber, ethers } from "ethers"
     import { onMount } from "svelte"
 
-    let poolSize: string
+    let poolSize = BigNumber.from(0)
     let active: boolean
     let timeLeft: ethers.BigNumberish
     let coinBalance: string
-    let claimSize: string
+    let claimSize = BigNumber.from(0)
 
     onMount(() => {
         // Note: using callbacks instead of await allows all of these fetches to be done concurrently
-        PpContract.getLossPoolRemainder().then((num) => (poolSize = num.toString()))
+        PpContract.getLossPoolRemainder().then((num) => (poolSize = num))
         PpContract.balanceOfSelf().then((num) => (coinBalance = num.toString()))
-        PpContract.getClaimSize().then((num) => (claimSize = num.toString()))
+        PpContract.getClaimSize().then((num) => (claimSize = num))
         PpContract.getTimeLeft().then((num) => {
             timeLeft = num
             active = timeLeft.toNumber() == 0
@@ -31,13 +32,11 @@
 <div class="page">
     <h1>Claim Pool</h1>
     <div class="container">
-        <!-- TODO (Alan): Substitute placeholders -->
-        <!-- TODO: Include images -->
-        <p>Pool Size: {poolSize} ETH</p>
+        <p>Pool Size: {ethers.utils.formatEther(poolSize)} ETH</p>
         <p>Active: {active ? "Yes" : "No"}</p>
         <p>Time Left: {timeLeft}s</p>
         <p>Coin Balance: {coinBalance} $PP</p>
-        <p>Claim Size: {claimSize} ETH</p>
+        <p>Claim Size: {ethers.utils.formatEther(claimSize)} ETH</p>
 
         <div class="button-container">
             <button on:click={claimPool}>Claim</button>

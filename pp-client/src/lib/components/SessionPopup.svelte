@@ -1,8 +1,9 @@
 <script lang="ts">
-    import { session } from "$app/stores"
+    import Erc721Contract from "$lib/contract/erc721_contract"
 
     import PpContract from "$lib/contract/pp_contract"
     import { selectedSession } from "$lib/stores/session"
+    import { BigNumber, ethers } from "ethers"
     import { onMount } from "svelte"
     import Button from "./common/Button.svelte"
     import TextInput from "./common/TextInput.svelte"
@@ -13,17 +14,24 @@
 
     let isActive: boolean
 
+    // Input fields for active session
     let appraisalPrice
     let stakeAmount
 
-    let stake
-    let appraisal
-    let participants
-    let sessionStake
-    let finalAppraisal
+    // Data labels
+    let stake = BigNumber.from(0)
+    let appraisal = BigNumber.from(0)
+    let participants = BigNumber.from(0)
+    let sessionStake = BigNumber.from(0)
+    let finalAppraisal = BigNumber.from(0)
+
+    // NFT metadata
+    let nftName = ""
+    let nftDescription = ""
+    let nftImage = ""
 
     onMount(async () => {
-        isActive = Date.now() * 3600 * 24 * 7 > $selectedSession.end.valueOf()
+        isActive = $selectedSession.isActive()
 
         stake = await PpContract.getStake($selectedSession.contract, $selectedSession.tokenid)
         participants = $selectedSession.participants
@@ -31,11 +39,28 @@
         sessionStake = await PpContract.getTotalSessionStake($selectedSession.contract, $selectedSession.tokenid)
         finalAppraisal = await PpContract.getFinalAppraisal($selectedSession.contract, $selectedSession.tokenid)
 
-        console.log(stake, appraisal, participants, sessionStake, finalAppraisal)
+        // Get NFT metadata
+        let { name, description, image } = await Erc721Contract.getInfo(
+            $selectedSession.contract,
+            $selectedSession.tokenid
+        )
+
+        nftName = name
+        nftDescription = description
+        nftImage = image
+
+        console.log(name)
+        console.log(description)
+        console.log(image)
     })
 
     async function setVote() {
-        PpContract.setVote(appraisalPrice, stakeAmount, $selectedSession.contract, $selectedSession.tokenid)
+        PpContract.setVote(
+            ethers.utils.parseEther(appraisalPrice),
+            ethers.utils.parseEther(stakeAmount),
+            $selectedSession.contract,
+            $selectedSession.tokenid
+        )
     }
 </script>
 
@@ -46,20 +71,24 @@
         {#if isActive || isMyOwn}
             <div class="top-left-panel">
                 {#if !isMyOwn}
-                    <p>Session Stake: {sessionStake}</p>
+                    <p>Session Stake: {ethers.utils.formatEther(sessionStake)}</p>
                 {/if}
                 <p>Participants: {participants}</p>
                 {#if isMyOwn}
-                    <p>Stake: {stake}</p>
-                    <p>Appraisal: {appraisal}</p>
-                    <p>Session Stake: {sessionStake}</p>
-                    <p>Final Appraisal: {finalAppraisal}</p>
+                    <p>Stake: {ethers.utils.formatEther(stake)}</p>
+                    <p>Appraisal: {ethers.utils.formatEther(appraisal)}</p>
+                    <p>Session Stake: {ethers.utils.formatEther(sessionStake)}</p>
+                    <p>Final Appraisal: {ethers.utils.formatEther(finalAppraisal)}</p>
                 {/if}
             </div>
         {/if}
 
         <div class="nft">
-            <img src="pplogo.png" />
+            <img src={nftImage} />
+            <div>
+                <h4>{nftName}</h4>
+                <p>{nftDescription}</p>
+            </div>
         </div>
 
         <div class="footer">
@@ -92,14 +121,14 @@
                 </div>
             {:else if isActive}
                 <div class="row">
-                    <TextInput placeholder="Appraisal Price" bind:value={appraisalPrice} />
+                    <TextInput placeholder="Appraisal Price (ETH)" bind:value={appraisalPrice} />
                     &nbsp;&nbsp; <!-- little hacky but it works -->
-                    <TextInput placeholder="Stake Amount in Wei" bind:value={stakeAmount} />
+                    <TextInput placeholder="Stake Amount (ETH)" bind:value={stakeAmount} />
                     <Button text="Submit" on:click={setVote} />
                 </div>
             {:else}
                 <div class="row">
-                    <p>Final Appraisal: {finalAppraisal}</p>
+                    <p>Final Appraisal: {ethers.utils.formatEther(finalAppraisal)}</p>
                     <!-- <p>$PP Issued: #</p> -->
                     <!-- <p>Profits Distributed: #</p> -->
                     <p>Total Votes: {$selectedSession.participants}</p>
@@ -160,13 +189,18 @@
 
     .nft {
         display: flex;
+        flex-direction: column;
         justify-content: center;
         align-items: center;
         height: 100%;
 
+        div {
+            padding: 32px;
+        }
+
         img {
-            max-width: 60%;
-            max-height: 60%;
+            max-width: 55%;
+            max-height: 55%;
         }
     }
 
